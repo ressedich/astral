@@ -85,7 +85,7 @@ final class TunnelController: ObservableObject {
         do {
             let built = try RunConfig.make(server)
             Vault.writeConfig(built.json)
-            let tunnel = try await prepare(host: built.host, config: built.json)
+            let tunnel = try await prepare(host: built.host)
             guard let session = tunnel.connection as? NETunnelProviderSession else {
                 throw ImportFailure(message: "Нет сессии туннеля")
             }
@@ -95,21 +95,17 @@ final class TunnelController: ObservableObject {
             ])
             status = tunnel.connection.status
         } catch {
-            message = error.localizedDescription
+            message = Self.explain(error)
         }
     }
 
-    private func prepare(host: String, config: String) async throws -> NETunnelProviderManager {
+    private func prepare(host: String) async throws -> NETunnelProviderManager {
         let tunnel = manager ?? NETunnelProviderManager()
         let proto = (tunnel.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
         proto.providerBundleIdentifier = Self.bundle
         proto.serverAddress = host.isEmpty ? "Astral" : host
         proto.disconnectOnSleep = false
-        proto.includeAllNetworks = true
-        proto.excludeLocalNetworks = true
-        proto.excludeAPNs = true
-        proto.enforceRoutes = true
-        proto.providerConfiguration = ["config": config]
+        proto.providerConfiguration = nil
         tunnel.protocolConfiguration = proto
         tunnel.localizedDescription = "Astral"
         tunnel.isEnabled = true
@@ -120,4 +116,14 @@ final class TunnelController: ObservableObject {
     }
 
     static let bundle = "app.astral.ios.tunnel"
+
+    private static func explain(_ error: Error) -> String {
+        let ns = error as NSError
+        let denied = ns.domain == "NEConfigurationErrorDomain" && ns.code == 10
+            || ns.localizedDescription.localizedCaseInsensitiveContains("permission denied")
+        if denied {
+            return "iOS не разрешил VPN. В системном окне нажмите «Разрешить». Профиль подписи должен содержать Network Extension и для приложения, и для туннеля."
+        }
+        return ns.localizedDescription
+    }
 }
