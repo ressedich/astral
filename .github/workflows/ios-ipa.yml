@@ -46,7 +46,7 @@ jobs:
           export CGO_CFLAGS="-isysroot $sdk -arch arm64 -miphoneos-version-min=26.0"
           export CGO_LDFLAGS="-isysroot $sdk -arch arm64 -miphoneos-version-min=26.0"
           cd ios/core
-          go mod edit -replace "github.com/xtls/xray-core=$RUNNER_TEMP/xray"
+          printf '\nrequire github.com/xtls/xray-core v0.0.0\n\nreplace github.com/xtls/xray-core => %s\n' "$RUNNER_TEMP/xray" >> go.mod
           go mod tidy
           go build -buildmode=c-archive -trimpath -ldflags "-s -w" -o ../build/libastral.a .
 
