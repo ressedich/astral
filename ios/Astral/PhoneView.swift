@@ -1,6 +1,4 @@
-import NetworkExtension
 import SwiftUI
-import UIKit
 
 struct PhoneView: View {
     @StateObject private var tunnel = TunnelController()
@@ -28,10 +26,9 @@ struct PhoneView: View {
             .background(Color.black)
         }
         .sheet(isPresented: $showAdd) { addSheet }
-        .overlay {
-            if tunnel.checked && !tunnel.installed {
-                permission
-            }
+        .onAppear { openPermissionIfNeeded() }
+        .onChange(of: tunnel.checked) { _, _ in
+            openPermissionIfNeeded()
         }
         .onChange(of: tunnel.status) { _, status in
             if status == .connected {
@@ -49,49 +46,18 @@ struct PhoneView: View {
         }
     }
 
-    private var permission: some View {
-        ZStack {
-            Color.black.opacity(0.55).ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 14) {
-                Text("Подключить VPN")
-                    .font(.system(size: 18, weight: .semibold))
-                Text("iOS покажет системное окно. Нажмите в нём «Разрешить», иначе туннель не запустится.")
-                    .font(.system(size: 14))
-                    .foregroundStyle(Color.white.opacity(0.72))
-                    .fixedSize(horizontal: false, vertical: true)
-                if !tunnel.message.isEmpty {
-                    Text(tunnel.message)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Color.black)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    private func openPermissionIfNeeded() {
+        guard !tunnel.installed else { return }
+        PermissionWindow.present { saved in
+            Task { @MainActor in
+                await tunnel.accept(saved)
+                guard tunnel.installed else { return }
+                guard let current else {
+                    tunnel.message = "Разрешение есть. Добавьте подписку и нажмите кнопку питания."
+                    return
                 }
-                if let pending = tunnel.pending {
-                    AllowVPNButton(manager: pending) { error in
-                        Task { @MainActor in
-                            if let error {
-                                tunnel.fail(error)
-                                return
-                            }
-                            await tunnel.accept(pending)
-                            guard tunnel.installed, let current else { return }
-                            await tunnel.connect(current)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 48)
-                }
+                await tunnel.connect(current)
             }
-            .onAppear { tunnel.prepareInstaller() }
-            .padding(18)
-            .frame(maxWidth: 320)
-            .background(Color(white: 0.11))
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 1))
-            .padding(.horizontal, 28)
         }
     }
 
@@ -139,8 +105,12 @@ struct PhoneView: View {
                 .shadow(color: .black.opacity(0.45), radius: 18, y: 10)
 
             Button {
-                guard let current else { return }
                 notice = ""
+                if !tunnel.installed {
+                    openPermissionIfNeeded()
+                    return
+                }
+                guard let current else { return }
                 Task {
                     if tunnel.live { tunnel.disconnect() }
                     else { await tunnel.connect(current) }
@@ -161,7 +131,7 @@ struct PhoneView: View {
                 .shadow(color: .black.opacity(0.45), radius: 18, y: 10)
             }
             .buttonStyle(.plain)
-            .disabled(current == nil || tunnel.busy)
+            .disabled(tunnel.busy || (tunnel.installed && current == nil))
 
             if !line.isEmpty {
                 Text(line)
@@ -499,59 +469,5 @@ private struct StarField: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
-    }
-}
-
-private struct AllowVPNButton: UIViewRepresentable {
-    var manager: NETunnelProviderManager
-    var onFinish: (Error?) -> Void
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator(manager: manager, onFinish: onFinish)
-    }
-
-    func makeUIView(context: Context) -> UIButton {
-        let button = UIButton(type: .custom)
-        button.setTitle("Подключить", for: .normal)
-        button.setTitleColor(UIColor(white: 0.067, alpha: 1), for: .normal)
-        button.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
-        button.backgroundColor = .white
-        button.layer.cornerRadius = 16
-        button.clipsToBounds = true
-        button.addTarget(context.coordinator, action: #selector(Coordinator.tap), for: .touchUpInside)
-        return button
-    }
-
-    func updateUIView(_ button: UIButton, context: Context) {
-        context.coordinator.manager = manager
-        context.coordinator.onFinish = onFinish
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
-        CGSize(width: proposal.width ?? 280, height: 48)
-    }
-
-    final class Coordinator: NSObject {
-        var manager: NETunnelProviderManager
-        var onFinish: (Error?) -> Void
-        private var saving = false
-
-        init(manager: NETunnelProviderManager, onFinish: @escaping (Error?) -> Void) {
-            self.manager = manager
-            self.onFinish = onFinish
-        }
-
-        @objc func tap() {
-            if saving { return }
-            saving = true
-            let manager = manager
-            let finish = onFinish
-            manager.saveToPreferences { error in
-                DispatchQueue.main.async {
-                    self.saving = false
-                    finish(error)
-                }
-            }
-        }
     }
 }

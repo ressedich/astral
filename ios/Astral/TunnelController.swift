@@ -8,10 +8,8 @@ final class TunnelController: ObservableObject {
     @Published var busy = false
     @Published var checked = false
     @Published var installed = false
-    @Published var pending: NETunnelProviderManager?
 
     private var manager: NETunnelProviderManager?
-    private var preparing = false
     private var observer: NSObjectProtocol?
     private var ignoreNextDrop = false
 
@@ -69,7 +67,7 @@ final class TunnelController: ObservableObject {
         }
     }
 
-    static func configure(_ tunnel: NETunnelProviderManager) {
+    nonisolated static func configure(_ tunnel: NETunnelProviderManager) {
         let proto = NETunnelProviderProtocol()
         proto.providerBundleIdentifier = bundle
         proto.serverAddress = "Astral"
@@ -79,31 +77,16 @@ final class TunnelController: ObservableObject {
         tunnel.isEnabled = true
     }
 
-    func prepareInstaller() {
-        if pending != nil || preparing { return }
-        preparing = true
-        let tunnel = NETunnelProviderManager()
-        tunnel.loadFromPreferences { _ in
-            Task { @MainActor in
-                Self.configure(tunnel)
-                self.pending = tunnel
-            }
-        }
-    }
-
-    func fail(_ error: Error) {
-        message = Self.explain(error)
-    }
-
     func accept(_ saved: NETunnelProviderManager) async {
+        manager = saved
+        installed = true
+        status = saved.connection.status
+        message = ""
         do {
             try await saved.loadFromPreferences()
-            manager = saved
-            installed = true
             status = saved.connection.status
-            message = ""
         } catch {
-            fail(error)
+            message = Self.describe(error)
         }
     }
 
@@ -140,7 +123,7 @@ final class TunnelController: ObservableObject {
             ])
             status = tunnel.connection.status
         } catch {
-            message = Self.explain(error)
+            message = Self.describe(error)
         }
     }
 
@@ -160,14 +143,14 @@ final class TunnelController: ObservableObject {
         return tunnel
     }
 
-    static let bundle = "app.astral.ios.tunnel"
+    nonisolated static let bundle = "app.astral.ios.tunnel"
 
-    private static func explain(_ error: Error) -> String {
+    nonisolated static func describe(_ error: Error) -> String {
         let ns = error as NSError
         let denied = ns.domain == "NEConfigurationErrorDomain" && ns.code == 10
             || ns.localizedDescription.localizedCaseInsensitiveContains("permission denied")
         if denied {
-            return "Системное окно не появилось. Удалите Astral в Настройки → VPN и нажмите «Подключить» снова. В подписи нужен Network Extension у приложения и у туннеля. (\(ns.domain) \(ns.code))"
+            return "iOS не записал VPN, поэтому Astral нет в Настройках. Окно «Разрешить» появляется только с Network Extension в подписи app.astral.ios и app.astral.ios.tunnel. (\(ns.domain) \(ns.code))"
         }
         let text = ns.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty {
