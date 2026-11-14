@@ -8,8 +8,10 @@ final class TunnelController: ObservableObject {
     @Published var busy = false
     @Published var checked = false
     @Published var installed = false
+    @Published var pending: NETunnelProviderManager?
 
     private var manager: NETunnelProviderManager?
+    private var preparing = false
     private var observer: NSObjectProtocol?
     private var ignoreNextDrop = false
 
@@ -67,28 +69,41 @@ final class TunnelController: ObservableObject {
         }
     }
 
-    func askPermission() {
-        let tunnel = manager ?? NETunnelProviderManager()
-        let proto = (tunnel.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
-        proto.providerBundleIdentifier = Self.bundle
+    static func configure(_ tunnel: NETunnelProviderManager) {
+        let proto = NETunnelProviderProtocol()
+        proto.providerBundleIdentifier = bundle
         proto.serverAddress = "Astral"
         proto.disconnectOnSleep = false
         tunnel.protocolConfiguration = proto
         tunnel.localizedDescription = "Astral"
         tunnel.isEnabled = true
-        busy = true
-        message = ""
-        tunnel.saveToPreferences { error in
+    }
+
+    func prepareInstaller() {
+        if pending != nil || preparing { return }
+        preparing = true
+        let tunnel = NETunnelProviderManager()
+        tunnel.loadFromPreferences { _ in
             Task { @MainActor in
-                self.busy = false
-                if let error {
-                    self.message = Self.explain(error)
-                    return
-                }
-                self.manager = tunnel
-                self.installed = true
-                self.status = tunnel.connection.status
+                Self.configure(tunnel)
+                self.pending = tunnel
             }
+        }
+    }
+
+    func fail(_ error: Error) {
+        message = Self.explain(error)
+    }
+
+    func accept(_ saved: NETunnelProviderManager) async {
+        do {
+            try await saved.loadFromPreferences()
+            manager = saved
+            installed = true
+            status = saved.connection.status
+            message = ""
+        } catch {
+            fail(error)
         }
     }
 
@@ -152,8 +167,12 @@ final class TunnelController: ObservableObject {
         let denied = ns.domain == "NEConfigurationErrorDomain" && ns.code == 10
             || ns.localizedDescription.localizedCaseInsensitiveContains("permission denied")
         if denied {
-            return "iOS не разрешил VPN. В системном окне нажмите «Разрешить». Профиль подписи должен содержать Network Extension и для приложения, и для туннеля."
+            return "Системное окно не появилось. Удалите Astral в Настройки → VPN и нажмите «Подключить» снова. В подписи нужен Network Extension у приложения и у туннеля. (\(ns.domain) \(ns.code))"
         }
-        return ns.localizedDescription
+        let text = ns.localizedDescription.trimmingCharacters(in: .whitespacesAndNewlines)
+        if text.isEmpty {
+            return "Не удалось сохранить VPN (\(ns.domain) \(ns.code))."
+        }
+        return "\(text) (\(ns.domain) \(ns.code))"
     }
 }

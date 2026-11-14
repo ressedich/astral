@@ -1,3 +1,4 @@
+import NetworkExtension
 import SwiftUI
 import UIKit
 
@@ -60,24 +61,31 @@ struct PhoneView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 if !tunnel.message.isEmpty {
                     Text(tunnel.message)
-                        .font(.system(size: 13))
-                        .foregroundStyle(Color.white.opacity(0.9))
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color.black)
                         .fixedSize(horizontal: false, vertical: true)
-                }
-                Button {
-                    tunnel.askPermission()
-                } label: {
-                    Text(tunnel.busy ? "Запрос" : "Подключить")
-                        .font(.system(size: 16, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Color.white)
-                        .foregroundStyle(Color(white: 0.067))
-                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 }
-                .buttonStyle(.plain)
-                .disabled(tunnel.busy)
+                if let pending = tunnel.pending {
+                    AllowVPNButton(manager: pending) { error in
+                        Task { @MainActor in
+                            if let error {
+                                tunnel.fail(error)
+                                return
+                            }
+                            await tunnel.accept(pending)
+                            guard tunnel.installed, let current else { return }
+                            await tunnel.connect(current)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                }
             }
+            .onAppear { tunnel.prepareInstaller() }
             .padding(18)
             .frame(maxWidth: 320)
             .background(Color(white: 0.11))
@@ -491,5 +499,59 @@ private struct StarField: View {
         }
         .ignoresSafeArea()
         .allowsHitTesting(false)
+    }
+}
+
+private struct AllowVPNButton: UIViewRepresentable {
+    var manager: NETunnelProviderManager
+    var onFinish: (Error?) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(manager: manager, onFinish: onFinish)
+    }
+
+    func makeUIView(context: Context) -> UIButton {
+        let button = UIButton(type: .custom)
+        button.setTitle("Подключить", for: .normal)
+        button.setTitleColor(UIColor(white: 0.067, alpha: 1), for: .normal)
+        button.titleLabel?.font = .systemFont(ofSize: 16, weight: .semibold)
+        button.backgroundColor = .white
+        button.layer.cornerRadius = 16
+        button.clipsToBounds = true
+        button.addTarget(context.coordinator, action: #selector(Coordinator.tap), for: .touchUpInside)
+        return button
+    }
+
+    func updateUIView(_ button: UIButton, context: Context) {
+        context.coordinator.manager = manager
+        context.coordinator.onFinish = onFinish
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UIButton, context: Context) -> CGSize? {
+        CGSize(width: proposal.width ?? 280, height: 48)
+    }
+
+    final class Coordinator: NSObject {
+        var manager: NETunnelProviderManager
+        var onFinish: (Error?) -> Void
+        private var saving = false
+
+        init(manager: NETunnelProviderManager, onFinish: @escaping (Error?) -> Void) {
+            self.manager = manager
+            self.onFinish = onFinish
+        }
+
+        @objc func tap() {
+            if saving { return }
+            saving = true
+            let manager = manager
+            let finish = onFinish
+            manager.saveToPreferences { error in
+                DispatchQueue.main.async {
+                    self.saving = false
+                    finish(error)
+                }
+            }
+        }
     }
 }
