@@ -1,0 +1,51 @@
+name: iOS IPA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "ios/**"
+      - ".github/workflows/ios-ipa.yml"
+
+jobs:
+  ipa:
+    name: Собрать unsigned IPA
+    runs-on: macos-26
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Xcode
+        run: xcodebuild -version
+
+      - name: Archive
+        run: |
+          set -euo pipefail
+          xcodebuild \
+            -project ios/Astral.xcodeproj \
+            -scheme Astral \
+            -configuration Release \
+            -destination "generic/platform=iOS" \
+            -archivePath "$RUNNER_TEMP/Astral.xcarchive" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            archive
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          app=$(find "$RUNNER_TEMP/Astral.xcarchive/Products/Applications" -maxdepth 1 -name "*.app" | head -n 1)
+          test -d "$app"
+          rm -rf "$RUNNER_TEMP/Payload"
+          mkdir -p "$RUNNER_TEMP/Payload"
+          cp -R "$app" "$RUNNER_TEMP/Payload/"
+          ditto -c -k --keepParent "$RUNNER_TEMP/Payload" Astral-unsigned.ipa
+          ls -lh Astral-unsigned.ipa
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Astral-unsigned-ipa
+          path: Astral-unsigned.ipa
+          retention-days: 14
+          if-no-files-found: error

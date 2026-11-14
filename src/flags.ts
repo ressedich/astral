@@ -1,0 +1,170 @@
+const WORDS: [string, string][] = [
+  ['united kingdom', 'GB'],
+  ['great britain', 'GB'],
+  ['hong kong', 'HK'],
+  ['united states', 'US'],
+  ['netherlands', 'NL'],
+  ['amsterdam', 'NL'],
+  ['нидерланд', 'NL'],
+  ['голлан', 'NL'],
+  ['germany', 'DE'],
+  ['frankfurt', 'DE'],
+  ['berlin', 'DE'],
+  ['герман', 'DE'],
+  ['poland', 'PL'],
+  ['warsaw', 'PL'],
+  ['польш', 'PL'],
+  ['sweden', 'SE'],
+  ['stockholm', 'SE'],
+  ['швец', 'SE'],
+  ['finland', 'FI'],
+  ['helsinki', 'FI'],
+  ['финлянд', 'FI'],
+  ['france', 'FR'],
+  ['paris', 'FR'],
+  ['франц', 'FR'],
+  ['japan', 'JP'],
+  ['tokyo', 'JP'],
+  ['япон', 'JP'],
+  ['singapore', 'SG'],
+  ['сингапур', 'SG'],
+  ['гонконг', 'HK'],
+  ['korea', 'KR'],
+  ['seoul', 'KR'],
+  ['корея', 'KR'],
+  ['turkey', 'TR'],
+  ['istanbul', 'TR'],
+  ['турц', 'TR'],
+  ['canada', 'CA'],
+  ['канад', 'CA'],
+  ['australia', 'AU'],
+  ['австрал', 'AU'],
+  ['switzerland', 'CH'],
+  ['zurich', 'CH'],
+  ['швейцар', 'CH'],
+  ['austria', 'AT'],
+  ['vienna', 'AT'],
+  ['австри', 'AT'],
+  ['czech', 'CZ'],
+  ['prague', 'CZ'],
+  ['чех', 'CZ'],
+  ['romania', 'RO'],
+  ['bucharest', 'RO'],
+  ['румын', 'RO'],
+  ['bulgaria', 'BG'],
+  ['болгар', 'BG'],
+  ['ukraine', 'UA'],
+  ['kyiv', 'UA'],
+  ['kiev', 'UA'],
+  ['украин', 'UA'],
+  ['kazakhstan', 'KZ'],
+  ['казах', 'KZ'],
+  ['latvia', 'LV'],
+  ['riga', 'LV'],
+  ['латви', 'LV'],
+  ['lithuania', 'LT'],
+  ['vilnius', 'LT'],
+  ['литва', 'LT'],
+  ['estonia', 'EE'],
+  ['tallinn', 'EE'],
+  ['эстон', 'EE'],
+  ['spain', 'ES'],
+  ['madrid', 'ES'],
+  ['испан', 'ES'],
+  ['italy', 'IT'],
+  ['milan', 'IT'],
+  ['итал', 'IT'],
+  ['portugal', 'PT'],
+  ['lisbon', 'PT'],
+  ['португал', 'PT'],
+  ['brazil', 'BR'],
+  ['бразил', 'BR'],
+  ['india', 'IN'],
+  ['индия', 'IN'],
+  ['israel', 'IL'],
+  ['израил', 'IL'],
+  ['norway', 'NO'],
+  ['oslo', 'NO'],
+  ['норвег', 'NO'],
+  ['denmark', 'DK'],
+  ['copenhagen', 'DK'],
+  ['дания', 'DK'],
+  ['дани', 'DK'],
+  ['ireland', 'IE'],
+  ['dublin', 'IE'],
+  ['ирланд', 'IE'],
+  ['belgium', 'BE'],
+  ['brussels', 'BE'],
+  ['бельг', 'BE'],
+  ['hungary', 'HU'],
+  ['budapest', 'HU'],
+  ['венгр', 'HU'],
+  ['serbia', 'RS'],
+  ['серб', 'RS'],
+  ['moldova', 'MD'],
+  ['молдов', 'MD'],
+  ['georgia', 'GE'],
+  ['грузи', 'GE'],
+  ['armenia', 'AM'],
+  ['армен', 'AM'],
+  ['taiwan', 'TW'],
+  ['тайван', 'TW'],
+  ['thailand', 'TH'],
+  ['таиланд', 'TH'],
+  ['vietnam', 'VN'],
+  ['вьетнам', 'VN'],
+  ['indonesia', 'ID'],
+  ['индонез', 'ID'],
+  ['malaysia', 'MY'],
+  ['малайз', 'MY'],
+  ['mexico', 'MX'],
+  ['мексик', 'MX'],
+  ['argentina', 'AR'],
+  ['аргентин', 'AR'],
+  ['emirates', 'AE'],
+  ['dubai', 'AE'],
+  ['дубай', 'AE'],
+  ['russia', 'RU'],
+  ['moscow', 'RU'],
+  ['росси', 'RU'],
+  ['москва', 'RU'],
+  ['usa', 'US'],
+  ['сша', 'US'],
+  ['америк', 'US'],
+  ['london', 'GB'],
+  ['britain', 'GB'],
+  ['england', 'GB'],
+  ['англия', 'GB'],
+  ['великобрит', 'GB'],
+]
+
+const FLAG = /[\u{1F1E6}-\u{1F1FF}]{2}/u
+
+function codeOf(code: string) {
+  const pair = code.toUpperCase()
+  return /^[A-Z]{2}$/.test(pair) ? pair : ''
+}
+
+export function countryOf(name: string) {
+  const found = name.match(FLAG)
+  if (found) {
+    const letters = [...found[0]].map((char) => String.fromCharCode((char.codePointAt(0) ?? 0) - 127397)).join('')
+    const code = codeOf(letters)
+    if (code) return code
+  }
+  const bracket = name.match(/[\[(]([A-Za-z]{2})[\])]/)
+  if (bracket) return codeOf(bracket[1])
+  const prefix = name.match(/^([A-Za-z]{2})[\s|_-]/)
+  if (prefix) return codeOf(prefix[1])
+  const lower = name.toLowerCase()
+  const words = [...WORDS].sort((a, b) => b[0].length - a[0].length)
+  for (const [word, code] of words) {
+    if (lower.includes(word)) return code
+  }
+  return ''
+}
+
+export function labelOf(name: string) {
+  const plain = name.replace(FLAG, '').replace(/\s+/g, ' ').trim()
+  return plain.split('|')[0]?.trim() || plain || name
+}
