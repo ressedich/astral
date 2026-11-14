@@ -11,12 +11,66 @@ jobs:
   ipa:
     name: Собрать unsigned IPA
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 50
     steps:
       - uses: actions/checkout@v4
 
-      - name: Xcode
-        run: xcodebuild -version
+      - name: Go
+        run: |
+          set -euo pipefail
+          arch=$(uname -m)
+          case "$arch" in
+            arm64) suffix=darwin-arm64 ;;
+            x86_64) suffix=darwin-amd64 ;;
+            *) echo "unknown arch $arch"; exit 1 ;;
+          esac
+          curl -fL --retry 3 -o /tmp/go.tgz "https://go.dev/dl/go1.27.3.${suffix}.tar.gz"
+          rm -rf "$RUNNER_TEMP/goroot"
+          mkdir -p "$RUNNER_TEMP/goroot"
+          tar -C "$RUNNER_TEMP/goroot" -xzf /tmp/go.tgz
+          echo "$RUNNER_TEMP/goroot/go/bin" >> "$GITHUB_PATH"
+          "$RUNNER_TEMP/goroot/go/bin/go" version
+
+      - name: Xray
+        run: |
+          set -euo pipefail
+          export PATH="$RUNNER_TEMP/goroot/go/bin:$PATH"
+          sdk=$(xcrun --sdk iphoneos --show-sdk-path)
+          clang=$(xcrun --sdk iphoneos --find clang)
+          mkdir -p ios/build
+          git clone --depth 1 --branch v26.11.9 https://github.com/XTLS/Xray-core "$RUNNER_TEMP/xray"
+          export CGO_ENABLED=1
+          export GOOS=ios
+          export GOARCH=arm64
+          export CC="$clang"
+          export CGO_CFLAGS="-isysroot $sdk -arch arm64 -miphoneos-version-min=26.0"
+          export CGO_LDFLAGS="-isysroot $sdk -arch arm64 -miphoneos-version-min=26.0"
+          cd ios/core
+          go mod edit -replace "github.com/xtls/xray-core=$RUNNER_TEMP/xray"
+          go mod tidy
+          go build -buildmode=c-archive -trimpath -ldflags "-s -w" -o ../build/libastral.a .
+
+      - name: tun2socks
+        run: |
+          set -euo pipefail
+          sdk=$(xcrun --sdk iphoneos --show-sdk-path)
+          clang=$(xcrun --sdk iphoneos --find clang)
+          flags="-arch arm64 -isysroot $sdk -miphoneos-version-min=26.0 -Wno-error"
+          git clone --depth 1 --branch 2.14.4 --recursive https://github.com/heiher/hev-socks5-tunnel "$RUNNER_TEMP/hev"
+          make -C "$RUNNER_TEMP/hev" -j4 static \
+            CC="$clang" \
+            AR="$(xcrun --find ar)" \
+            PP="$clang -E" \
+            CFLAGS="$flags"
+          copy() {
+            found=$(find "$RUNNER_TEMP/hev" -name "$1" -print -quit)
+            test -n "$found"
+            cp "$found" "ios/build/$1"
+          }
+          copy libhev-socks5-tunnel.a
+          copy libyaml.a
+          copy liblwip.a
+          copy libhev-task-system.a
 
       - name: Archive
         run: |

@@ -49,6 +49,7 @@
 			membershipExceptions = (
 				Info.plist,
 				Tunnel.entitlements,
+				Astral-Bridging-Header.h,
 			);
 			target = A10000000000000000000003 /* Tunnel */;
 		};
@@ -327,8 +328,32 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
+				DEAD_CODE_STRIPPING = NO;
 				INFOPLIST_FILE = Tunnel/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-force_load",
+					"$(SRCROOT)/build/libastral.a",
+					"-force_load",
+					"$(SRCROOT)/build/libhev-socks5-tunnel.a",
+					"-force_load",
+					"$(SRCROOT)/build/libyaml.a",
+					"-force_load",
+					"$(SRCROOT)/build/liblwip.a",
+					"-force_load",
+					"$(SRCROOT)/build/libhev-task-system.a",
+					"-lresolv",
+					"-framework",
+					Security,
+					"-framework",
+					CoreFoundation,
+					"-framework",
+					Foundation,
+					"-framework",
+					Network,
+				);
+				SWIFT_OBJC_BRIDGING_HEADER = Tunnel/Astral-Bridging-Header.h;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -352,8 +377,32 @@
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				GENERATE_INFOPLIST_FILE = NO;
+				DEAD_CODE_STRIPPING = NO;
 				INFOPLIST_FILE = Tunnel/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-force_load",
+					"$(SRCROOT)/build/libastral.a",
+					"-force_load",
+					"$(SRCROOT)/build/libhev-socks5-tunnel.a",
+					"-force_load",
+					"$(SRCROOT)/build/libyaml.a",
+					"-force_load",
+					"$(SRCROOT)/build/liblwip.a",
+					"-force_load",
+					"$(SRCROOT)/build/libhev-task-system.a",
+					"-lresolv",
+					"-framework",
+					Security,
+					"-framework",
+					CoreFoundation,
+					"-framework",
+					Foundation,
+					"-framework",
+					Network,
+				);
+				SWIFT_OBJC_BRIDGING_HEADER = Tunnel/Astral-Bridging-Header.h;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

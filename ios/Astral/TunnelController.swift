@@ -10,7 +10,7 @@ final class TunnelController: ObservableObject {
     private var manager: NETunnelProviderManager?
     private var observer: NSObjectProtocol?
 
-    var live: Bool { status == .connected || status == .connecting }
+    var live: Bool { status == .connected || status == .connecting || status == .reasserting }
 
     init() {
         observer = NotificationCenter.default.addObserver(
@@ -20,7 +20,13 @@ final class TunnelController: ObservableObject {
         ) { [weak self] note in
             guard let connection = note.object as? NEVPNConnection else { return }
             Task { @MainActor in
-                self?.status = connection.status
+                guard let self else { return }
+                self.status = connection.status
+                if connection.status == .connected {
+                    self.message = ""
+                } else if connection.status == .disconnected || connection.status == .invalid, let text = Vault.readError() {
+                    self.message = text
+                }
             }
         }
         Task { await reload() }
@@ -33,36 +39,54 @@ final class TunnelController: ObservableObject {
     func reload() async {
         do {
             let managers = try await NETunnelProviderManager.loadAllFromPreferences()
-            manager = managers.first { ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == TunnelController.bundle }
+            manager = managers.first { ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == Self.bundle }
             status = manager?.connection.status ?? .disconnected
         } catch {
             message = error.localizedDescription
         }
     }
 
-    func toggle(server: ServerRecord) async {
-        if live {
-            manager?.connection.stopVPNTunnel()
-            return
-        }
+    func disconnect() {
+        manager?.connection.stopVPNTunnel()
+    }
+
+    func connect(_ server: ServerNode) async {
+        if busy { return }
         busy = true
         message = ""
+        Vault.clearError()
         defer { busy = false }
+        if live {
+            manager?.connection.stopVPNTunnel()
+            for _ in 0..<50 {
+                if !live { break }
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
         do {
-            let tunnel = try await prepare(server: server)
-            try tunnel.connection.startVPNTunnel()
+            let built = try RunConfig.make(server)
+            guard Vault.writeConfig(built.json) else { throw ImportFailure(message: "Не удалось записать конфиг") }
+            let tunnel = try await prepare(host: built.host)
+            guard let session = tunnel.connection as? NETunnelProviderSession else {
+                throw ImportFailure(message: "Нет сессии туннеля")
+            }
+            try session.startVPNTunnel(options: ["host": built.host as NSString])
             status = tunnel.connection.status
         } catch {
             message = error.localizedDescription
         }
     }
 
-    private func prepare(server: ServerRecord) async throws -> NETunnelProviderManager {
+    private func prepare(host: String) async throws -> NETunnelProviderManager {
         let tunnel = manager ?? NETunnelProviderManager()
-        let proto = NETunnelProviderProtocol()
+        let proto = (tunnel.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
         proto.providerBundleIdentifier = Self.bundle
-        proto.serverAddress = server.host.isEmpty ? "Astral" : server.host
+        proto.serverAddress = host.isEmpty ? "Astral" : host
         proto.disconnectOnSleep = false
+        proto.includeAllNetworks = true
+        proto.excludeLocalNetworks = true
+        proto.excludeAPNs = true
+        proto.enforceRoutes = true
         tunnel.protocolConfiguration = proto
         tunnel.localizedDescription = "Astral"
         tunnel.isEnabled = true
@@ -73,30 +97,4 @@ final class TunnelController: ObservableObject {
     }
 
     static let bundle = "app.astral.ios.tunnel"
-}
-
-struct ServerRecord: Identifiable, Codable, Equatable {
-    var id: String
-    var name: String
-    var host: String
-}
-
-enum ServerStore {
-    private static let key = "servers"
-    private static let selectedKey = "selected"
-
-    static func load() -> (servers: [ServerRecord], selected: String) {
-        let defaults = UserDefaults(suiteName: "group.app.astral.ios") ?? .standard
-        let servers = (try? JSONDecoder().decode([ServerRecord].self, from: defaults.data(forKey: key) ?? Data())) ?? []
-        let selected = defaults.string(forKey: selectedKey) ?? servers.first?.id ?? ""
-        return (servers, selected)
-    }
-
-    static func save(servers: [ServerRecord], selected: String) {
-        let defaults = UserDefaults(suiteName: "group.app.astral.ios") ?? .standard
-        if let data = try? JSONEncoder().encode(servers) {
-            defaults.set(data, forKey: key)
-        }
-        defaults.set(selected, forKey: selectedKey)
-    }
 }
