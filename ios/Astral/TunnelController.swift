@@ -6,6 +6,8 @@ final class TunnelController: ObservableObject {
     @Published var status: NEVPNStatus = .invalid
     @Published var message = ""
     @Published var busy = false
+    @Published var checked = false
+    @Published var installed = false
 
     private var manager: NETunnelProviderManager?
     private var observer: NSObjectProtocol?
@@ -56,9 +58,37 @@ final class TunnelController: ObservableObject {
         do {
             let managers = try await NETunnelProviderManager.loadAllFromPreferences()
             manager = managers.first { ($0.protocolConfiguration as? NETunnelProviderProtocol)?.providerBundleIdentifier == Self.bundle }
+            installed = manager != nil
             status = manager?.connection.status ?? .disconnected
+            checked = true
         } catch {
+            checked = true
             message = error.localizedDescription
+        }
+    }
+
+    func askPermission() {
+        let tunnel = manager ?? NETunnelProviderManager()
+        let proto = (tunnel.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
+        proto.providerBundleIdentifier = Self.bundle
+        proto.serverAddress = "Astral"
+        proto.disconnectOnSleep = false
+        tunnel.protocolConfiguration = proto
+        tunnel.localizedDescription = "Astral"
+        tunnel.isEnabled = true
+        busy = true
+        message = ""
+        tunnel.saveToPreferences { error in
+            Task { @MainActor in
+                self.busy = false
+                if let error {
+                    self.message = Self.explain(error)
+                    return
+                }
+                self.manager = tunnel
+                self.installed = true
+                self.status = tunnel.connection.status
+            }
         }
     }
 

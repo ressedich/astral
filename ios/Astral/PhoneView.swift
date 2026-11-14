@@ -27,6 +27,11 @@ struct PhoneView: View {
             .background(Color.black)
         }
         .sheet(isPresented: $showAdd) { addSheet }
+        .overlay {
+            if tunnel.checked && !tunnel.installed {
+                permission
+            }
+        }
         .onChange(of: tunnel.status) { _, status in
             if status == .connected {
                 if connectedAt == nil { connectedAt = Date() }
@@ -40,6 +45,45 @@ struct PhoneView: View {
                 now = Date()
                 try? await Task.sleep(for: .seconds(1))
             }
+        }
+    }
+
+    private var permission: some View {
+        ZStack {
+            Color.black.opacity(0.55).ignoresSafeArea()
+            VStack(alignment: .leading, spacing: 14) {
+                Text("Подключить VPN")
+                    .font(.system(size: 18, weight: .semibold))
+                Text("iOS покажет системное окно. Нажмите в нём «Разрешить», иначе туннель не запустится.")
+                    .font(.system(size: 14))
+                    .foregroundStyle(Color.white.opacity(0.72))
+                    .fixedSize(horizontal: false, vertical: true)
+                if !tunnel.message.isEmpty {
+                    Text(tunnel.message)
+                        .font(.system(size: 13))
+                        .foregroundStyle(Color.white.opacity(0.9))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Button {
+                    tunnel.askPermission()
+                } label: {
+                    Text(tunnel.busy ? "Запрос" : "Подключить")
+                        .font(.system(size: 16, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
+                        .background(Color.white)
+                        .foregroundStyle(Color(white: 0.067))
+                        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(tunnel.busy)
+            }
+            .padding(18)
+            .frame(maxWidth: 320)
+            .background(Color(white: 0.11))
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 1))
+            .padding(.horizontal, 28)
         }
     }
 
