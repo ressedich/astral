@@ -9,6 +9,7 @@ final class TunnelController: ObservableObject {
 
     private var manager: NETunnelProviderManager?
     private var observer: NSObjectProtocol?
+    private var ignoreNextDrop = false
 
     var live: Bool { status == .connected || status == .connecting || status == .reasserting }
 
@@ -24,8 +25,23 @@ final class TunnelController: ObservableObject {
                 self.status = connection.status
                 if connection.status == .connected {
                     self.message = ""
-                } else if connection.status == .disconnected || connection.status == .invalid, let text = Vault.readError() {
-                    self.message = text
+                } else if connection.status == .disconnected || connection.status == .invalid {
+                    if self.ignoreNextDrop {
+                        self.ignoreNextDrop = false
+                        return
+                    }
+                    connection.fetchLastDisconnectError { error in
+                        let stored = Vault.readError()
+                        Task { @MainActor in
+                            if let error = error as NSError?, error.domain == "Astral" {
+                                self.message = error.localizedDescription
+                            } else if let stored {
+                                self.message = stored
+                            } else if let error, !error.localizedDescription.isEmpty {
+                                self.message = error.localizedDescription
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -47,6 +63,8 @@ final class TunnelController: ObservableObject {
     }
 
     func disconnect() {
+        ignoreNextDrop = true
+        message = ""
         manager?.connection.stopVPNTunnel()
     }
 
@@ -57,6 +75,7 @@ final class TunnelController: ObservableObject {
         Vault.clearError()
         defer { busy = false }
         if live {
+            ignoreNextDrop = true
             manager?.connection.stopVPNTunnel()
             for _ in 0..<50 {
                 if !live { break }
@@ -65,19 +84,22 @@ final class TunnelController: ObservableObject {
         }
         do {
             let built = try RunConfig.make(server)
-            guard Vault.writeConfig(built.json) else { throw ImportFailure(message: "Не удалось записать конфиг") }
-            let tunnel = try await prepare(host: built.host)
+            Vault.writeConfig(built.json)
+            let tunnel = try await prepare(host: built.host, config: built.json)
             guard let session = tunnel.connection as? NETunnelProviderSession else {
                 throw ImportFailure(message: "Нет сессии туннеля")
             }
-            try session.startVPNTunnel(options: ["host": built.host as NSString])
+            try session.startVPNTunnel(options: [
+                "host": built.host as NSString,
+                "config": built.json as NSString,
+            ])
             status = tunnel.connection.status
         } catch {
             message = error.localizedDescription
         }
     }
 
-    private func prepare(host: String) async throws -> NETunnelProviderManager {
+    private func prepare(host: String, config: String) async throws -> NETunnelProviderManager {
         let tunnel = manager ?? NETunnelProviderManager()
         let proto = (tunnel.protocolConfiguration as? NETunnelProviderProtocol) ?? NETunnelProviderProtocol()
         proto.providerBundleIdentifier = Self.bundle
@@ -87,6 +109,7 @@ final class TunnelController: ObservableObject {
         proto.excludeLocalNetworks = true
         proto.excludeAPNs = true
         proto.enforceRoutes = true
+        proto.providerConfiguration = ["config": config]
         tunnel.protocolConfiguration = proto
         tunnel.localizedDescription = "Astral"
         tunnel.isEnabled = true

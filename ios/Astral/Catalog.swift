@@ -39,42 +39,50 @@ struct ImportFailure: LocalizedError {
 enum Vault {
     private static let suite = "group.app.astral.ios"
 
-    static func directory() -> URL? {
-        FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: suite)
+    private static func folders() -> [URL] {
+        var found: [URL] = []
+        if let group = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: suite) {
+            found.append(group)
+        }
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("Astral", isDirectory: true)
+        try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
+        found.append(support)
+        return found
     }
 
     static func load() -> Profile {
-        guard let url = directory()?.appendingPathComponent("profile.json"),
-              let data = try? Data(contentsOf: url),
-              let profile = try? JSONDecoder().decode(Profile.self, from: data) else { return Profile() }
-        return profile
+        for folder in folders() {
+            let url = folder.appendingPathComponent("profile.json")
+            guard let data = try? Data(contentsOf: url),
+                  let profile = try? JSONDecoder().decode(Profile.self, from: data) else { continue }
+            return profile
+        }
+        return Profile()
     }
 
     static func save(_ profile: Profile) {
-        guard let url = directory()?.appendingPathComponent("profile.json"),
-              let data = try? JSONEncoder().encode(profile) else { return }
-        try? data.write(to: url, options: .atomic)
-    }
-
-    static func writeConfig(_ json: String) -> Bool {
-        guard let url = directory()?.appendingPathComponent("config.json") else { return false }
-        do {
-            try json.write(to: url, atomically: true, encoding: .utf8)
-            return true
-        } catch {
-            return false
+        guard let data = try? JSONEncoder().encode(profile) else { return }
+        for folder in folders() {
+            try? data.write(to: folder.appendingPathComponent("profile.json"), options: .atomic)
         }
     }
 
+    static func writeConfig(_ json: String) {
+        guard let group = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: suite) else { return }
+        try? json.write(to: group.appendingPathComponent("config.json"), atomically: true, encoding: .utf8)
+    }
+
     static func readError() -> String? {
-        guard let url = directory()?.appendingPathComponent("last-error.txt") else { return nil }
-        let text = (try? String(contentsOf: url, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let group = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: suite) else { return nil }
+        let text = (try? String(contentsOf: group.appendingPathComponent("last-error.txt"), encoding: .utf8))?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
         return text?.isEmpty == false ? text : nil
     }
 
     static func clearError() {
-        guard let url = directory()?.appendingPathComponent("last-error.txt") else { return }
-        try? FileManager.default.removeItem(at: url)
+        guard let group = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: suite) else { return }
+        try? FileManager.default.removeItem(at: group.appendingPathComponent("last-error.txt"))
     }
 }
 

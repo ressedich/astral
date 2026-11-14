@@ -18,12 +18,13 @@ struct PhoneView: View {
     private var line: String { notice.isEmpty ? tunnel.message : notice }
 
     var body: some View {
-        ZStack {
-            Color(red: 0.004, green: 0.004, blue: 0.004).ignoresSafeArea()
+        GeometryReader { geo in
             VStack(spacing: 0) {
                 stage
+                    .frame(height: max(300, geo.size.height * 0.46))
                 list
             }
+            .background(Color.black)
         }
         .sheet(isPresented: $showAdd) { addSheet }
         .onChange(of: tunnel.status) { _, status in
@@ -43,147 +44,189 @@ struct PhoneView: View {
     }
 
     private var stage: some View {
-        ZStack(alignment: .bottom) {
+        ZStack {
+            Color(red: 0.004, green: 0.004, blue: 0.004)
             StarField(speed: speed)
-            VStack(spacing: 14) {
-                HStack {
-                    Text("astral")
-                        .font(.system(size: 15, weight: .medium))
-                        .tracking(3)
-                        .textCase(.lowercase)
-                    Spacer()
-                    Button {
-                        draft = ""
-                        showAdd = true
-                    } label: {
-                        Image(systemName: "plus")
-                            .font(.system(size: 16, weight: .semibold))
-                            .frame(width: 36, height: 36)
-                    }
-                }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
+            VStack {
                 Spacer()
                 dock
+                    .padding(.bottom, 22)
             }
         }
-        .frame(minHeight: 300)
+        .clipped()
     }
 
     private var dock: some View {
-        VStack(spacing: 10) {
-            Text(current?.name ?? "Нет сервера")
-                .font(.system(size: 15, weight: .medium))
-                .lineLimit(1)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: 8) {
-                Text("TUN")
-                    .font(.system(size: 12, weight: .semibold))
-                    .tracking(1.4)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 36)
-                    .background(Color.white.opacity(0.14))
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                Button {
-                    guard let current else { return }
-                    notice = ""
-                    Task {
-                        if tunnel.live { tunnel.disconnect() }
-                        else { await tunnel.connect(current) }
-                    }
-                } label: {
-                    Text(label)
-                        .font(.system(size: 16, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 48)
-                        .background(tunnel.live ? Color.white.opacity(0.16) : Color.white)
-                        .foregroundStyle(tunnel.live ? Color.white : Color.black)
-                        .clipShape(RoundedRectangle(cornerRadius: 16))
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                FlagMark(name: current?.name ?? "")
+                Text(current.map { Place.label($0.name) } ?? "Нет сервера")
+                    .font(.system(size: 14, weight: .semibold))
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(height: 52)
+            .background(Color(red: 0.07, green: 0.07, blue: 0.078).opacity(0.94))
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+            .shadow(color: .black.opacity(0.45), radius: 18, y: 10)
+
+            Text("TUN")
+                .font(.system(size: 12, weight: .semibold))
+                .tracking(1.6)
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 34)
+                .background(Color(white: 0.227))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(4)
+                .background(Color(red: 0.07, green: 0.07, blue: 0.078).opacity(0.94))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+                .shadow(color: .black.opacity(0.45), radius: 18, y: 10)
+
+            Button {
+                guard let current else { return }
+                notice = ""
+                Task {
+                    if tunnel.live { tunnel.disconnect() }
+                    else { await tunnel.connect(current) }
                 }
-                .disabled(current == nil || tunnel.busy)
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "power")
+                        .font(.system(size: 15, weight: .semibold))
+                    Text(label)
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(tunnel.live ? Color(white: 0.173) : Color.white)
+                .foregroundStyle(tunnel.live ? Color.white : Color(white: 0.067))
+                .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.1), lineWidth: 1))
+                .shadow(color: .black.opacity(0.45), radius: 18, y: 10)
+            }
+            .buttonStyle(.plain)
+            .disabled(current == nil || tunnel.busy)
+
+            if !line.isEmpty {
+                Text(line)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.white.opacity(0.62))
+                    .padding(.horizontal, 6)
             }
             if tunnel.status == .connected, let connectedAt {
                 Text(clock(since: connectedAt))
                     .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.65))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if !line.isEmpty {
-                Text(line)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.white.opacity(0.75))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .foregroundStyle(Color.white.opacity(0.62))
+                    .padding(.horizontal, 6)
             }
         }
-        .padding(14)
-        .background(Color.white.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 22))
-        .padding(.horizontal, 16)
-        .padding(.bottom, 12)
+        .frame(width: 280)
     }
 
     private var list: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                if profile.subscriptions.isEmpty {
-                    Text("Добавьте подписку")
-                        .font(.system(size: 14))
-                        .foregroundStyle(.white.opacity(0.45))
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 8)
-                        .padding(.top, 8)
-                }
-                ForEach(profile.subscriptions) { sub in
-                    subscription(sub)
-                    ForEach(profile.servers.filter { $0.subId == sub.id }) { server in
-                        serverRow(server)
-                    }
+        VStack(spacing: 0) {
+            HStack {
+                Text("astral")
+                    .font(.system(size: 15, weight: .medium))
+                    .tracking(2.7)
+                    .textCase(.lowercase)
+                Spacer()
+                iconButton("wave.3.right") { Task { await ping(profile.servers) } }
+                    .disabled(profile.servers.isEmpty || !pinging.isEmpty)
+                iconButton("plus") {
+                    draft = ""
+                    showAdd = true
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.bottom, 24)
+            .foregroundStyle(Color.white.opacity(0.9))
+            .padding(.horizontal, 16)
+            .padding(.top, 18)
+            .padding(.bottom, 8)
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    if profile.subscriptions.isEmpty {
+                        Text("Добавьте подписку по ссылке\nили вставьте vless://")
+                            .font(.system(size: 14))
+                            .foregroundStyle(Color.white.opacity(0.42))
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 48)
+                            .padding(.horizontal, 18)
+                    }
+                    ForEach(profile.subscriptions) { sub in
+                        subscription(sub)
+                        ForEach(profile.servers.filter { $0.subId == sub.id }) { server in
+                            serverRow(server)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 28)
+            }
+            .scrollIndicators(.hidden)
         }
-        .background(Color.black)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(white: 0.055))
+        .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.06)).frame(height: 1) }
     }
 
     private func subscription(_ sub: Subscription) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text(sub.name)
-                .font(.system(size: 13, weight: .semibold))
-                .lineLimit(1)
-            HStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Text(sub.name)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Color.white.opacity(0.42))
+                    .lineLimit(1)
+                Spacer(minLength: 8)
                 textButton("пинг") { Task { await ping(profile.servers.filter { $0.subId == sub.id }) } }
                 textButton("обновить") { Task { await refresh(sub) } }
                     .disabled(sub.url.isEmpty || importing)
                 textButton("убрать") { remove(sub) }
                 textButton("инфо", on: infoId == sub.id) { infoId = infoId == sub.id ? nil : sub.id }
             }
-            .font(.system(size: 13))
+            .frame(height: 28)
+            .padding(.horizontal, 8)
             if infoId == sub.id {
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: 8) {
                     if !sub.announce.isEmpty {
                         Text(sub.announce)
-                            .font(.system(size: 13))
-                            .foregroundStyle(.white)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Color.white.opacity(0.94))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    if !When.day(sub.expire).isEmpty {
-                        Text(When.day(sub.expire))
-                            .font(.system(size: 13))
-                    }
-                    Text("обновлено \(When.updated(sub.updated))")
+                    if !When.day(sub.expire).isEmpty || sub.updated > 0 {
+                        VStack(alignment: .leading, spacing: 4) {
+                            if !When.day(sub.expire).isEmpty {
+                                Text(When.day(sub.expire))
+                            }
+                            Text("обновлено \(When.updated(sub.updated))")
+                        }
                         .font(.system(size: 12))
-                        .foregroundStyle(.white.opacity(0.55))
+                        .foregroundStyle(Color.white.opacity(0.72))
+                        .padding(.top, sub.announce.isEmpty ? 0 : 8)
+                        .overlay(alignment: .top) {
+                            if !sub.announce.isEmpty {
+                                Rectangle().fill(Color.white.opacity(0.12)).frame(height: 1)
+                            }
+                        }
+                    }
                 }
                 .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(white: 0.17))
-                .clipShape(RoundedRectangle(cornerRadius: 14))
+                .background(Color(white: 0.173))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.22), lineWidth: 1))
+                .shadow(color: .black.opacity(0.55), radius: 18, y: 10)
+                .padding(.horizontal, 8)
+                .padding(.bottom, 8)
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.top, 12)
-        .foregroundStyle(.white)
+        .padding(.top, 8)
     }
 
     private func serverRow(_ server: ServerNode) -> some View {
@@ -196,78 +239,102 @@ struct PhoneView: View {
                 Task { await tunnel.connect(server) }
             }
         } label: {
-            HStack(spacing: 10) {
-                Text(server.name)
-                    .lineLimit(1)
+            HStack(spacing: 12) {
+                FlagMark(name: server.name)
+                Text(Place.label(server.name))
+                    .font(.system(size: 14, weight: .medium))
                     .foregroundStyle(.white)
+                    .lineLimit(1)
                 Spacer(minLength: 8)
                 pingMark(server.id)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 10)
             .frame(height: 44)
-            .background(server.id == current?.id ? Color.white.opacity(0.16) : Color.clear)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .background(server.id == current?.id ? Color(white: 0.204) : Color.clear)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         }
         .buttonStyle(.plain)
     }
 
     private func pingMark(_ id: String) -> some View {
         let value = pings[id]
-        return HStack(spacing: 6) {
+        let busy = pinging.contains(id)
+        return HStack(spacing: 8) {
             if let value, value > 0 {
-                Capsule()
-                    .fill(Color.white.opacity(0.85))
-                    .frame(width: 28 * max(0.15, 1 - min(Double(value), 400) / 400), height: 3)
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.16))
+                    Capsule().fill(Color.white)
+                        .frame(width: 28 * max(0.12, 1 - min(Double(value), 400) / 400))
+                }
+                .frame(width: 28, height: 2)
             }
-            Text(pingText(value, busy: pinging.contains(id)))
+            Text(pingText(value, busy: busy))
                 .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(busy || value == nil ? Color.white.opacity(0.35) : Color.white.opacity(0.9))
         }
+    }
+
+    private func iconButton(_ symbol: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .medium))
+                .frame(width: 32, height: 32)
+                .foregroundStyle(Color.white.opacity(0.78))
+        }
+        .buttonStyle(.plain)
     }
 
     private func textButton(_ title: String, on: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Text(title)
-                .foregroundStyle(on ? Color.white : Color.white.opacity(0.72))
+                .font(.system(size: 12))
+                .foregroundStyle(on ? Color.white : Color.white.opacity(0.45))
         }
         .buttonStyle(.plain)
     }
 
     private var addSheet: some View {
-        NavigationStack {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Ссылка подписки или строки vless://")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.6))
-                TextEditor(text: $draft)
-                    .scrollContentBackground(.hidden)
-                    .padding(8)
-                    .frame(minHeight: 180)
-                    .background(Color.white.opacity(0.06))
-                    .clipShape(RoundedRectangle(cornerRadius: 14))
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                HStack {
-                    Button("Вставить") { draft = UIPasteboard.general.string ?? draft }
-                    Spacer()
-                    Button(importing ? "Загрузка" : "Добавить") { Task { await add() } }
-                        .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || importing)
-                }
-                .font(.system(size: 16, weight: .semibold))
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Text("Подписка")
+                    .font(.system(size: 16, weight: .semibold))
                 Spacer()
+                Button("Закрыть") { showAdd = false }
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.white.opacity(0.75))
             }
-            .padding(16)
-            .background(Color.black)
-            .foregroundStyle(.white)
-            .navigationTitle("Подписка")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Закрыть") { showAdd = false }
-                }
+            Text("Ссылка подписки или строки vless://")
+                .font(.system(size: 13))
+                .foregroundStyle(Color.white.opacity(0.5))
+            TextEditor(text: $draft)
+                .scrollContentBackground(.hidden)
+                .padding(8)
+                .frame(minHeight: 160)
+                .background(Color.white.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .autocorrectionDisabled()
+                .textInputAutocapitalization(.never)
+            HStack {
+                Button("Вставить") { draft = UIPasteboard.general.string ?? draft }
+                    .font(.system(size: 13))
+                    .foregroundStyle(Color.white.opacity(0.75))
+                Spacer()
+                Button(importing ? "Загрузка" : "Добавить") { Task { await add() } }
+                    .font(.system(size: 13, weight: .semibold))
+                    .padding(.horizontal, 14)
+                    .frame(height: 36)
+                    .background(Color.white)
+                    .foregroundStyle(Color(white: 0.067))
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || importing)
             }
+            Spacer(minLength: 0)
         }
+        .padding(18)
+        .background(Color(white: 0.11))
+        .foregroundStyle(.white)
         .presentationDetents([.medium, .large])
+        .presentationBackground(Color(white: 0.11))
         .preferredColorScheme(.dark)
     }
 
@@ -281,9 +348,9 @@ struct PhoneView: View {
 
     private var speed: Double {
         switch tunnel.status {
-        case .connecting, .reasserting: return 90
-        case .connected: return 34
-        default: return 14
+        case .connecting, .reasserting: return 78
+        case .connected: return 28
+        default: return 12
         }
     }
 
@@ -363,14 +430,18 @@ private struct StarField: View {
         TimelineView(.animation(minimumInterval: 1 / 30)) { timeline in
             Canvas { context, size in
                 let time = timeline.date.timeIntervalSinceReferenceDate
-                for index in 0..<140 {
+                for index in 0..<160 {
                     let seed = Double((index * 97) % 1000) / 1000
-                    let x = CGFloat((seed * 1.7).truncatingRemainder(dividingBy: 1)) * size.width
-                    let pace = speed * (0.35 + seed)
-                    let y = CGFloat((seed * size.height + time * pace).truncatingRemainder(dividingBy: size.height + 8))
-                    let radius: CGFloat = index % 17 == 0 ? 2.4 : (index % 5 == 0 ? 1.6 : 1.05)
-                    let rect = CGRect(x: x, y: y, width: radius * 2, height: radius * 2)
-                    context.fill(Path(ellipseIn: rect), with: .color(.white.opacity(index % 4 == 0 ? 0.9 : 0.38)))
+                    let drift = Double((index * 53) % 1000) / 1000
+                    let x = CGFloat((seed * 1.9 + drift * 0.15).truncatingRemainder(dividingBy: 1)) * size.width
+                    let pace = speed * (0.25 + seed * 0.9)
+                    let travel = (seed * size.height + time * pace).truncatingRemainder(dividingBy: size.height + 24)
+                    let y = CGFloat(travel)
+                    let radius: CGFloat = index % 19 == 0 ? 2.2 : (index % 6 == 0 ? 1.45 : 0.9)
+                    let glow = CGRect(x: x - radius * 2.2, y: y - radius * 2.2, width: radius * 6.4, height: radius * 6.4)
+                    let core = CGRect(x: x, y: y, width: radius * 2, height: radius * 2)
+                    context.fill(Path(ellipseIn: glow), with: .color(.white.opacity(index % 3 == 0 ? 0.16 : 0.07)))
+                    context.fill(Path(ellipseIn: core), with: .color(.white.opacity(index % 4 == 0 ? 0.95 : 0.55)))
                 }
             }
         }

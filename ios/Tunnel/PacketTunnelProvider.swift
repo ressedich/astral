@@ -14,7 +14,10 @@ final class PacketTunnelProvider: NEPacketTunnelProvider {
             completionHandler(error)
         }
 
-        guard let config = SharedFiles.read("config.json"), !config.isEmpty else {
+        let config = (options?["config"] as? String)
+            ?? ((protocolConfiguration as? NETunnelProviderProtocol)?.providerConfiguration?["config"] as? String)
+            ?? SharedFiles.read("config.json")
+        guard let config, !config.isEmpty else {
             finish(Self.failure("Нет конфигурации сервера"))
             return
         }
