@@ -33,12 +33,14 @@ type SessionContextValue = {
   sheet: boolean
   setSheet: (open: boolean) => void
   locked: boolean
+  stopping: boolean
   selectServer: (id: string) => void
   patchSettings: (patch: Partial<Settings>) => void
   importSource: (source: string) => Promise<void>
   removeServer: (id: string) => void
   removeSubscription: (id: string) => void
   refreshSubscription: (id: string) => Promise<void>
+  refreshAll: () => Promise<{ updated: number; failed: number }>
   choose: (next: 'off' | Mode) => void
 }
 
@@ -191,6 +193,11 @@ function loadSettings(): Settings {
       mtu: Number(parsed.mtu) || base.mtu,
       dns: String(parsed.dns || base.dns),
       allowRoutes: Boolean(parsed.allowRoutes),
+      configRouting: parsed.configRouting !== false,
+      blockAds: Boolean(parsed.blockAds),
+      bypassLocal: parsed.bypassLocal !== false,
+      autoRefresh: parsed.autoRefresh !== false,
+      refreshMinutes: Number(parsed.refreshMinutes) > 0 ? Number(parsed.refreshMinutes) : base.refreshMinutes,
     }
   } catch {
     return base
@@ -215,9 +222,34 @@ function nodeKey(server: { host: string; port: number; vless: VlessLink | null }
 }
 
 function applyImport(current: Settings, result: ImportResult): Settings {
+  const existingSub = result.url
+    ? current.subscriptions.find((item) => item.url === result.url)
+    : undefined
+  const local = !result.url
+  const reuseSubId = existingSub?.id ?? (local ? (result.servers.length > 1 ? 'local' : null) : null)
+  const canReuse = Boolean(existingSub) || local
+  const known = new Map<string, string>()
+  if (canReuse) {
+    for (const item of current.servers) {
+      if (item.subId !== reuseSubId) continue
+      const key = nodeKey(item)
+      if (!known.has(key)) known.set(key, item.id)
+    }
+  }
+  const used = new Set<string>()
+  const pickId = (key: string) => {
+    const existing = known.get(key)
+    if (existing && !used.has(existing)) {
+      used.add(existing)
+      return existing
+    }
+    const fresh = crypto.randomUUID()
+    used.add(fresh)
+    return fresh
+  }
   const created = result.servers.map((item) =>
     sanitizeServer({
-      id: crypto.randomUUID(),
+      id: pickId(nodeKey(item)),
       name: item.name,
       host: item.host,
       port: item.port,
@@ -230,16 +262,15 @@ function applyImport(current: Settings, result: ImportResult): Settings {
   )
   if (!created.length) return current
   if (result.url) {
-    const existing = current.subscriptions.find((item) => item.url === result.url)
-    const subId = existing?.id ?? crypto.randomUUID()
+    const subId = existingSub?.id ?? crypto.randomUUID()
     const sub: Subscription = {
       id: subId,
-      name: result.name || existing?.name || 'Подписка',
+      name: result.name || existingSub?.name || 'Подписка',
       url: result.url,
       updatedAt: Date.now(),
       ...described(result),
     }
-    const subscriptions = existing
+    const subscriptions = existingSub
       ? current.subscriptions.map((item) => (item.id === subId ? sub : item))
       : [...current.subscriptions, sub]
     const tagged = created.map((item) => ({ ...item, subId }))
@@ -307,6 +338,11 @@ function payload(settings: Settings, server: ServerProfile, mode: Mode): Connect
       dns: settings.dns.trim(),
       allowRoutes: settings.allowRoutes,
     },
+    routing: {
+      config: settings.configRouting !== false,
+      blockAds: settings.blockAds === true,
+      bypassLocal: settings.bypassLocal !== false,
+    },
   }
 }
 
@@ -317,10 +353,12 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const [message, setMessage] = useState('')
   const [now, setNow] = useState(() => Date.now())
   const [sheet, setSheet] = useState(false)
+  const [stopping, setStopping] = useState(false)
   const pending = useRef(false)
   const hold = useRef(false)
   const refreshed = useRef(false)
   const describedOnce = useRef(false)
+  const refreshingAll = useRef(false)
 
   const persist = useCallback((next: Settings) => {
     localStorage.setItem(storageKey, JSON.stringify(next))
@@ -423,6 +461,40 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     })()
   }, [settings.subscriptions, update])
 
+  useEffect(() => {
+    if (!settings.autoRefresh) return
+    const minutes = Number(settings.refreshMinutes)
+    if (!Number.isFinite(minutes) || minutes <= 0) return
+    const tick = () => {
+      if (refreshingAll.current) return
+      const due = settings.subscriptions.filter(
+        (item) => item.url && (!item.updatedAt || Date.now() - item.updatedAt >= minutes * 60_000),
+      )
+      if (!due.length) return
+      refreshingAll.current = true
+      void (async () => {
+        try {
+          for (const sub of due) {
+            try {
+              const result = await importLinks(sub.url)
+              update((current) => keepServer(current, applyImport(current, result)))
+            } catch {
+              /* подписка недоступна, попробуем в следующий раз */
+            }
+          }
+        } finally {
+          refreshingAll.current = false
+        }
+      })()
+    }
+    const timer = window.setInterval(tick, 60_000)
+    const boot = window.setTimeout(tick, 4000)
+    return () => {
+      window.clearInterval(timer)
+      window.clearTimeout(boot)
+    }
+  }, [settings.autoRefresh, settings.refreshMinutes, settings.subscriptions, update])
+
   const locked = phase === 'connecting' || phase === 'connected'
 
   const fail = useCallback((text: string, openSettings = false) => {
@@ -435,6 +507,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const disconnect = useCallback(async () => {
     hold.current = false
     pending.current = true
+    setStopping(true)
     try {
       apply(await closeSession())
     } catch (error) {
@@ -442,6 +515,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       setMessage(error instanceof Error ? error.message : 'Не удалось отключить')
     } finally {
       pending.current = false
+      setStopping(false)
     }
   }, [apply])
 
@@ -454,6 +528,33 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     const match = next.servers.find((item) => item.name === chosen.name) ?? next.servers.find((item) => item.id === next.serverId) ?? chosen
     return { settings: { ...next, mode: current.mode, serverId: match.id }, server: match }
   }, [])
+
+  const refreshAll = useCallback(async () => {
+    if (refreshingAll.current) return { updated: 0, failed: 0 }
+    const subs = settings.subscriptions.filter((item) => item.url)
+    if (!subs.length) return { updated: 0, failed: 0 }
+    refreshingAll.current = true
+    let updated = 0
+    let failed = 0
+    try {
+      for (const sub of subs) {
+        try {
+          const result = await importLinks(sub.url)
+          if (!result.servers.length) {
+            failed += 1
+            continue
+          }
+          update((current) => keepServer(current, applyImport(current, result)))
+          updated += 1
+        } catch {
+          failed += 1
+        }
+      }
+    } finally {
+      refreshingAll.current = false
+    }
+    return { updated, failed }
+  }, [settings.subscriptions, update])
 
   const connectAs = useCallback(
     async (mode: Mode, target?: ServerProfile) => {
@@ -525,6 +626,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       sheet,
       setSheet,
       locked,
+      stopping,
       selectServer: (id) => {
         if (pending.current || id === server.id) return
         const target = settings.servers.find((item) => item.id === id)
@@ -547,7 +649,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         update((current) => ({ ...current, ...patch }))
       },
       importSource: async (source) => {
-        if (locked) throw new Error('Сначала отключитесь')
+        if (phase === 'connecting' || stopping) throw new Error('Дождитесь завершения подключения')
         const result = await importLinks(source)
         hold.current = false
         setPhase((current) => (current === 'error' ? 'idle' : current))
@@ -566,12 +668,13 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         })
       },
       refreshSubscription: async (id) => {
-        if (locked) throw new Error('Сначала отключитесь')
+        if (phase === 'connecting' || stopping) throw new Error('Дождитесь завершения подключения')
         const sub = settings.subscriptions.find((item) => item.id === id && item.url)
         if (!sub) throw new Error('У подписки нет ссылки')
         const result = await importLinks(sub.url)
         update((current) => keepServer(current, applyImport(current, result)))
       },
+      refreshAll,
       removeSubscription: (id) => {
         if (locked) return
         update((current) => {
@@ -586,7 +689,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       },
       choose,
     }),
-    [choose, connectAs, disconnect, locked, now, phase, server, settings, sheet, snapshot, message, update],
+    [choose, connectAs, disconnect, locked, now, phase, refreshAll, server, settings, sheet, snapshot, stopping, message, update],
   )
 
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>

@@ -77,7 +77,7 @@ function fromSing(core) {
   if (core.type === 'hysteria2') {
     const tls = core.tls || {}
     return {
-      tag: 'proxy',
+      tag: core.tag && core.tag !== 'proxy' ? core.tag : 'proxy',
       protocol: 'hysteria',
       settings: { version: 2, address: core.server, port: Number(core.server_port) },
       streamSettings: {
@@ -184,6 +184,7 @@ function singleOutbound(upstream) {
   if (upstream.type === 'vless') return fromLink(upstream)
   throw new Error('Этот протокол пока не поддерживается')
 }
+export { fromSing }
 
 function isUtility(outbound) {
   return ['freedom', 'blackhole', 'dns', 'loopback'].includes(outbound?.protocol)
@@ -199,38 +200,285 @@ function preference(outbound) {
 
 function withDirect(outbounds) {
   const list = outbounds.map((item) => ({ ...item }))
-  if (!list.some((item) => item.protocol === 'freedom')) list.push({ protocol: 'freedom', tag: 'direct' })
-  if (!list.some((item) => item.protocol === 'blackhole')) list.push({ protocol: 'blackhole', tag: 'block' })
+  let direct = list.find((item) => item.protocol === 'freedom')
+  if (!direct) {
+    direct = { protocol: 'freedom', tag: 'direct' }
+    list.push(direct)
+  } else if (!direct.tag) {
+    direct.tag = 'direct'
+  }
+  let block = list.find((item) => item.protocol === 'blackhole')
+  if (!block) {
+    block = { protocol: 'blackhole', tag: 'block' }
+    list.push(block)
+  } else if (!block.tag) {
+    block.tag = 'block'
+  }
   return list
 }
 
-const privateRule = {
-  type: 'field',
-  ip: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', '169.254.0.0/16'],
-  outboundTag: 'direct',
+function tagOf(value) {
+  return String(value ?? '').trim().slice(0, 64)
+}
+
+function textList(value, max = 256) {
+  const source = Array.isArray(value) ? value : typeof value === 'string' ? [value] : []
+  const list = source
+    .filter((item) => typeof item === 'string')
+    .map((item) => item.trim().slice(0, 300))
+    .filter(Boolean)
+  return list.length ? list.slice(0, max) : null
+}
+
+function portList(value) {
+  if (typeof value === 'number' && Number.isInteger(value) && value >= 0 && value <= 65535) return String(value)
+  if (typeof value !== 'string') return null
+  const text = value.trim().slice(0, 300)
+  return /^[\d,\-:\s]+$/.test(text) ? text.replace(/\s+/g, '') : null
+}
+
+function attrMap(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const entries = Object.entries(value)
+    .slice(0, 16)
+    .map(([key, item]) => [String(key).trim().slice(0, 64), String(item ?? '').slice(0, 120)])
+    .filter(([key, item]) => key && item)
+  return entries.length ? Object.fromEntries(entries) : null
+}
+
+function outboundRefs(outbound) {
+  const refs = []
+  const proxyTag = tagOf(outbound?.proxySettings?.tag)
+  if (proxyTag) refs.push(proxyTag)
+  const dialer = tagOf(outbound?.streamSettings?.sockopt?.dialerProxy)
+  if (dialer) refs.push(dialer)
+  return refs
+}
+
+const inboundTags = ['tun-in', 'socks-in', 'http-in']
+const matchers = ['linear', 'hybrid', 'regex']
+const strategies = ['AsIs', 'IPIfNonMatch', 'IPOnDemand']
+const MAX_ROUTING_TARGETS = 24
+
+function sanitizeRule(rule, tags, balancers) {
+  if (!rule || typeof rule !== 'object') return null
+  const outboundTag = tagOf(rule.outboundTag)
+  const balancerTag = tagOf(rule.balancerTag)
+  if (!outboundTag && !balancerTag) return null
+  if (outboundTag && !tags.has(outboundTag)) return null
+  if (balancerTag && !balancers.has(balancerTag)) return null
+  const result = { type: 'field' }
+  let hasCondition = false
+  const domain = textList(rule.domain)
+  if (domain) {
+    result.domain = domain
+    hasCondition = true
+  }
+  const ip = textList(rule.ip)
+  if (ip) {
+    result.ip = ip
+    hasCondition = true
+  }
+  const sourceIP = textList(rule.sourceIP)
+  if (sourceIP) {
+    result.sourceIP = sourceIP
+    hasCondition = true
+  }
+  const user = textList(rule.user)
+  if (user) {
+    result.user = user
+    hasCondition = true
+  }
+  const protocol = textList(rule.protocol)
+  if (protocol) {
+    result.protocol = protocol
+    hasCondition = true
+  }
+  const attrs = attrMap(rule.attrs)
+  if (attrs) {
+    result.attrs = attrs
+    hasCondition = true
+  }
+  if (rule.inboundTag !== undefined) {
+    const inbound = textList(rule.inboundTag)?.filter((tag) => inboundTags.includes(tag))
+    if (!inbound?.length) return null
+    result.inboundTag = inbound
+    hasCondition = true
+  }
+  const port = portList(rule.port)
+  if (port) {
+    result.port = port
+    hasCondition = true
+  }
+  const sourcePort = portList(rule.sourcePort)
+  if (sourcePort) {
+    result.sourcePort = sourcePort
+    hasCondition = true
+  }
+  const localPort = portList(rule.localPort)
+  if (localPort) {
+    result.localPort = localPort
+    hasCondition = true
+  }
+  if (rule.network !== undefined) {
+    const network = String(rule.network ?? '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter((item) => item === 'tcp' || item === 'udp')
+    if (!network.length) return null
+    result.network = [...new Set(network)].join(',')
+    hasCondition = true
+  }
+  if (matchers.includes(rule.domainMatcher)) result.domainMatcher = rule.domainMatcher
+  const ruleTag = tagOf(rule.ruleTag)
+  if (ruleTag) result.ruleTag = ruleTag
+  if (outboundTag) result.outboundTag = outboundTag
+  if (balancerTag) result.balancerTag = balancerTag
+  if (!hasCondition) return null
+  return result
+}
+
+function routingFromBundle(source, outbounds, fallbackTag) {
+  if (!source || typeof source !== 'object') return null
+  const byTag = new Map()
+  for (const item of outbounds) {
+    const tag = tagOf(item?.tag)
+    if (tag) byTag.set(tag, item)
+  }
+  const rules = Array.isArray(source.rules) ? source.rules.slice(0, 400) : []
+  const declared = Array.isArray(source.balancers) ? source.balancers.slice(0, 8) : []
+  const tags = new Set([fallbackTag])
+  for (const rule of rules) {
+    const tag = tagOf(rule?.outboundTag)
+    if (!tag || tags.has(tag)) continue
+    const item = byTag.get(tag)
+    if (!item) continue
+    if (!isUtility(item) && tags.size > MAX_ROUTING_TARGETS) continue
+    tags.add(tag)
+  }
+  const keep = new Set(tags)
+  const queue = [...keep]
+  while (queue.length) {
+    const item = byTag.get(queue.shift())
+    for (const ref of outboundRefs(item)) {
+      if (byTag.has(ref) && !keep.has(ref)) {
+        keep.add(ref)
+        queue.push(ref)
+      }
+    }
+  }
+  const proxies = [...keep].filter((tag) => {
+    const item = byTag.get(tag)
+    return Boolean(item) && !isUtility(item)
+  })
+  const balancers = []
+  for (const item of declared) {
+    const tag = tagOf(item?.tag)
+    const selector = textList(item?.selector)?.filter((entry) => proxies.includes(entry))
+    if (!tag || !selector?.length) continue
+    const balancer = { tag, selector }
+    if (item.strategy && typeof item.strategy === 'object' && typeof item.strategy.type === 'string') {
+      balancer.strategy = { type: item.strategy.type.slice(0, 24) }
+    }
+    balancers.push(balancer)
+  }
+  const balancerTags = new Set(balancers.map((item) => item.tag))
+  const cleaned = rules.map((rule) => sanitizeRule(rule, keep, balancerTags)).filter(Boolean)
+  if (!cleaned.length && !balancers.length) return null
+  return {
+    rules: cleaned,
+    balancers,
+    keep,
+    proxies,
+    domainStrategy: strategies.includes(source.domainStrategy) ? source.domainStrategy : 'AsIs',
+    domainMatcher: matchers.includes(source.domainMatcher) ? source.domainMatcher : null,
+  }
+}
+
+function dnsServers(value, fallback) {
+  const cleaned = (Array.isArray(value) ? value : []).filter((item) => {
+    const address = typeof item === 'string' ? item : item?.address
+    if (typeof address !== 'string') return false
+    const lower = address.trim().toLowerCase()
+    return Boolean(lower) && lower !== 'fakedns' && !lower.startsWith('fakedns+')
+  })
+  return cleaned.length ? cleaned : [fallback || '1.1.1.1', '8.8.8.8']
+}
+
+function buildDns(value, fallback) {
+  const base = value && typeof value === 'object' ? { ...value } : {}
+  base.servers = dnsServers(base.servers, fallback)
+  if (!['UseIP', 'UseIPv4', 'UseIPv6', 'UseIPv4v6', 'AsIs'].includes(base.queryStrategy)) base.queryStrategy = 'UseIPv4'
+  return base
 }
 
 export function buildRunConfig(cfg) {
-  const bundle = cfg.upstream.xray
-  const ranked = (bundle?.outbounds?.length ? bundle.outbounds : [singleOutbound(cfg.upstream)])
-    .slice()
-    .sort((a, b) => preference(a) - preference(b))
-  const outbounds = withDirect(ranked)
+  const bundle = cfg.upstream.xray && typeof cfg.upstream.xray === 'object' ? cfg.upstream.xray : null
+  const source = bundle?.outbounds?.length ? bundle.outbounds : [singleOutbound(cfg.upstream)]
+  const outbounds = withDirect(source.slice().sort((a, b) => preference(a) - preference(b)))
   const allProxies = outbounds.filter((item) => !isUtility(item))
   const mirrors = allProxies.filter((item) => item.tag === 'main' || /-2$/.test(item.tag || ''))
   const proxies = mirrors.length ? mirrors : allProxies
   const chosen = proxies[0]
-  const routing = {
-    domainStrategy: 'AsIs',
-    rules: [privateRule, { type: 'field', network: 'tcp,udp', outboundTag: chosen?.tag || 'proxy' }],
+  if (chosen && !chosen.tag) chosen.tag = 'proxy'
+  const directTag = outbounds.find((item) => item.protocol === 'freedom')?.tag || 'direct'
+  const blockTag = outbounds.find((item) => item.protocol === 'blackhole')?.tag || 'block'
+  const fallbackTag = chosen?.tag || directTag
+  const options =
+    cfg.routing && typeof cfg.routing === 'object'
+      ? cfg.routing
+      : { config: cfg.routing !== false, blockAds: false, bypassLocal: true }
+  const custom = bundle && options.config !== false ? routingFromBundle(bundle.routing, outbounds, fallbackTag) : null
+  const observatorySource =
+    bundle?.burstObservatory && typeof bundle.burstObservatory === 'object'
+      ? { burst: true, value: bundle.burstObservatory }
+      : bundle?.observatory && typeof bundle.observatory === 'object'
+        ? { burst: false, value: bundle.observatory }
+        : null
+  const needsObservatory = Boolean(
+    custom?.balancers.some((item) => item.strategy?.type === 'leastPing' || item.strategy?.type === 'leastLoad'),
+  )
+  let observatory = null
+  if (needsObservatory && observatorySource && custom?.proxies.length) {
+    const value = { ...observatorySource.value, subjectSelector: custom.proxies }
+    if (observatorySource.burst) {
+      const ping = value.pingConfig && typeof value.pingConfig === 'object' ? value.pingConfig : {}
+      value.pingConfig = { ...ping, destination: ping.destination || 'https://www.gstatic.com/generate_204' }
+    }
+    observatory = { burst: observatorySource.burst, value }
   }
-  const keep = new Set([chosen?.tag, 'direct', 'block'].filter(Boolean))
+  const balancers = (custom?.balancers || []).map((item) => {
+    if (observatory || (item.strategy?.type !== 'leastPing' && item.strategy?.type !== 'leastLoad')) return item
+    return { ...item, strategy: { ...item.strategy, type: 'random' } }
+  })
+  const rules = []
+  if (options.bypassLocal !== false) {
+    rules.push({
+      type: 'field',
+      ip: ['10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '127.0.0.0/8', '169.254.0.0/16'],
+      outboundTag: directTag,
+    })
+  }
+  if (options.blockAds) {
+    rules.push({ type: 'field', domain: ['geosite:category-ads-all'], outboundTag: blockTag })
+  }
+  rules.push(...(custom?.rules || []))
+  rules.push({ type: 'field', network: 'tcp,udp', outboundTag: fallbackTag })
+  const routing = {
+    domainStrategy: custom?.domainStrategy || 'AsIs',
+    ...(custom?.domainMatcher ? { domainMatcher: custom.domainMatcher } : {}),
+    rules,
+    ...(balancers.length ? { balancers } : {}),
+  }
+  const keep = new Set([fallbackTag, directTag, blockTag])
+  if (custom) for (const tag of custom.keep) keep.add(tag)
   const slim = outbounds.filter((item) => isUtility(item) || keep.has(item.tag))
-  const dns = bundle?.dns ? { ...bundle.dns, queryStrategy: 'UseIPv4' } : { queryStrategy: 'UseIPv4', servers: [cfg.tun?.dns || '1.1.1.1', '8.8.8.8'] }
+  const dns = buildDns(bundle?.dns, cfg.tun?.dns)
   const config = {
     log: { loglevel: 'warning' },
     dns,
     policy: { levels: { 0: { handshake: 4, connIdle: 300, uplinkOnly: 1, downlinkOnly: 2 } } },
+    ...(observatory ? { [observatory.burst ? 'burstObservatory' : 'observatory']: observatory.value } : {}),
     routing,
     inbounds:
       cfg.mode === 'tun'
@@ -432,6 +680,13 @@ function watchHolder(runtime, onExit) {
   }
 }
 
+function holderEnv() {
+  const env = { ...process.env }
+  if (process.versions.electron) env.ELECTRON_RUN_AS_NODE = '1'
+  delete env.ASTRAL_PORT
+  return env
+}
+
 async function launchHolder(runtime, elevated) {
   const jobPath = path.join(runtime, jobName)
   await rm(path.join(runtime, statusName), { force: true })
@@ -439,13 +694,15 @@ async function launchHolder(runtime, elevated) {
   if (!elevated) {
     const child = spawn(process.execPath, [holderPath, jobPath], {
       cwd: runtime,
+      env: holderEnv(),
       windowsHide: true,
       stdio: 'ignore',
     })
     child.unref()
     return
   }
-  const command = `Start-Process -FilePath ${psQuote(process.execPath)} -ArgumentList @(${psQuote(holderPath)},${psQuote(jobPath)}) -Verb RunAs -WindowStyle Hidden`
+  const elevatedEnv = process.versions.electron ? "$env:ELECTRON_RUN_AS_NODE='1'; " : ''
+  const command = `${elevatedEnv}Start-Process -FilePath ${psQuote(process.execPath)} -ArgumentList @(${psQuote(holderPath)},${psQuote(jobPath)}) -Verb RunAs -WindowStyle Hidden`
   try {
     await exec('powershell.exe', ['-NoProfile', '-Command', command], 120000)
   } catch (error) {
@@ -471,10 +728,10 @@ export async function reapXray(runtime) {
   }
 }
 
-export async function startCore(cfg, root, onExit) {
-  const binDir = path.join(root, 'bin')
+export async function startCore(cfg, dirs, onExit) {
+  const binDir = dirs.bin
   const bin = await ensureXray(binDir)
-  const runtime = path.join(root, 'runtime')
+  const runtime = dirs.runtime
   await mkdir(runtime, { recursive: true })
   const next = cfg.mode === 'proxy' ? { ...cfg, proxy: await reservePorts(cfg.proxy) } : cfg
   const configPath = path.join(runtime, 'core.json')
@@ -542,7 +799,10 @@ export async function stopCore(handle, runtime) {
   const child = handle?.child
   if (child && child.exitCode == null) {
     child.kill()
-    await waitExit(child, 2000)
+    if (!(await waitExit(child, 900)) && child.exitCode == null) {
+      child.kill('SIGKILL')
+      await waitExit(child, 250)
+    }
   }
   await rm(path.join(runtime, 'xray.pid'), { force: true })
   await rm(path.join(runtime, 'core.json'), { force: true })

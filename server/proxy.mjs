@@ -356,8 +356,9 @@ function listen(port, handler) {
 function closeServer(server) {
   if (!server) return Promise.resolve()
   for (const socket of server.sockets ?? []) socket.destroy()
+  server.closeAllConnections?.()
   return new Promise((resolve) => {
-    const timer = setTimeout(resolve, 1000)
+    const timer = setTimeout(resolve, 400)
     server.close(() => {
       clearTimeout(timer)
       resolve()
@@ -421,6 +422,20 @@ export function probeEgress(httpPort) {
       reject(error)
     })
   })
+}
+
+export async function probeViaProxy(proxyPort, host, port) {
+  const started = performance.now()
+  try {
+    const socket = await Promise.race([
+      openUpstream(host, port, { type: 'http', host: '127.0.0.1', port: proxyPort }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 2500)),
+    ])
+    socket.end()
+    return Math.max(1, Math.round(performance.now() - started))
+  } catch {
+    return -1
+  }
 }
 
 export async function probeTcp(host, port) {

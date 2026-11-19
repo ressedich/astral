@@ -1,0 +1,52 @@
+name: Windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Собрать установщик
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Зависимости
+        run: npm ci
+
+      - name: Ядра (Xray, sing-box, wintun)
+        run: npm run fetch:cores
+
+      - name: Сборка установщика
+        run: npm run dist
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Артефакт
+        uses: actions/upload-artifact@v4
+        with:
+          name: Astral-Setup
+          path: release/*.exe
+          retention-days: 30
+          if-no-files-found: error
+
+      - name: Публикация релиза
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.exe
+            release/latest.yml
+          generate_release_notes: true
+          draft: false

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
-import { probe } from '../api'
+import { getSystem, probe, setAutostart } from '../api'
 import { FlagIcon } from '../flag-icon'
 import { countryOf, labelOf } from '../flags'
 import { formatBytes, formatDuration } from '../format'
@@ -9,7 +9,7 @@ import type { ServerProfile, Subscription } from '../types'
 
 export function Shell() {
   const session = useSession()
-  const { settings, server, phase, message, snapshot, locked, sheet, setSheet } = session
+  const { settings, server, phase, message, snapshot, locked, stopping, sheet, setSheet } = session
   const [addOpen, setAddOpen] = useState(false)
   const ping = useManualPings(settings.servers)
   const [refreshing, setRefreshing] = useState<string | null>(null)
@@ -56,13 +56,13 @@ export function Shell() {
         <header className="side-head">
           <div className="mark">astral</div>
           <div className="tools">
-            <IconButton title="Пинг" disabled={locked || ping.busy || !settings.servers.length} onClick={() => void ping.run()}>
+            <IconButton title="Пинг" disabled={ping.busy || !settings.servers.length} onClick={() => void ping.run()}>
               <PulseIcon />
             </IconButton>
             <IconButton title="Параметры" disabled={locked} onClick={() => setSheet(true)}>
               <SlidersIcon />
             </IconButton>
-            <IconButton title="Добавить" disabled={locked} onClick={() => setAddOpen(true)}>
+            <IconButton title="Добавить" onClick={() => setAddOpen(true)}>
               <PlusIcon />
             </IconButton>
           </div>
@@ -78,7 +78,7 @@ export function Shell() {
                   <button
                     type="button"
                     className="text-btn"
-                    disabled={locked || ping.busy}
+                    disabled={ping.busy}
                     onClick={() => void ping.run(nodes.map((item) => item.id))}
                   >
                     пинг
@@ -86,7 +86,7 @@ export function Shell() {
                   <button
                     type="button"
                     className="text-btn"
-                    disabled={locked || refreshing === sub.id}
+                    disabled={refreshing === sub.id}
                     onClick={() => void refresh(sub.id)}
                   >
                     {refreshing === sub.id ? '…' : 'обновить'}
@@ -144,11 +144,20 @@ export function Shell() {
           </div>
           <button
             type="button"
-            className={live ? 'power live' : 'power'}
+            className={
+              stopping
+                ? 'power live stopping'
+                : phase === 'connecting'
+                  ? 'power live connecting'
+                  : live
+                    ? 'power live'
+                    : 'power'
+            }
+            disabled={stopping}
             onClick={() => session.choose(live ? 'off' : selectedMode)}
           >
             <PowerIcon />
-            {phase === 'connecting' ? 'Подключение' : live ? 'Выключить' : 'Включить'}
+            {stopping ? 'Отключение' : phase === 'connecting' ? 'Подключение' : live ? 'Выключить' : 'Включить'}
           </button>
           {message && <p className="dock-note">{message}</p>}
           {phase === 'connected' && (
@@ -425,7 +434,25 @@ function AddDialog({ onClose }: { onClose: () => void }) {
 
 function SettingsDialog({ onClose }: { onClose: () => void }) {
   const session = useSession()
-  const { settings, locked, snapshot, phase } = session
+  const { settings, server, locked, snapshot, phase, stopping } = session
+  const busy = phase === 'connecting' || stopping
+  const [system, setSystem] = useState<{ available: boolean; enabled: boolean } | null>(null)
+  const [autoBusy, setAutoBusy] = useState(false)
+  const [autoError, setAutoError] = useState('')
+  const [refreshBusy, setRefreshBusy] = useState(false)
+  const [refreshNote, setRefreshNote] = useState('')
+  const routingRules = (() => {
+    const routing = (server.xray as { routing?: { rules?: unknown } } | null)?.routing
+    return Array.isArray(routing?.rules) ? routing.rules.length : 0
+  })()
+  const subscriptions = settings.subscriptions.filter((item) => item.url)
+  const lastUpdated = subscriptions.reduce<number | null>(
+    (latest, item) => (item.updatedAt && (!latest || item.updatedAt > latest) ? item.updatedAt : latest),
+    null,
+  )
+  const updatedLabel = lastUpdated
+    ? new Date(lastUpdated).toLocaleString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
+    : 'ещё не обновлялась'
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -435,10 +462,55 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
     return () => window.removeEventListener('keydown', onKey)
   }, [onClose])
 
+  useEffect(() => {
+    let cancelled = false
+    getSystem()
+      .then((value) => {
+        if (!cancelled) setSystem(value.autostart)
+      })
+      .catch(() => {
+        if (!cancelled) setSystem({ available: false, enabled: false })
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  async function toggleAutostart(enabled: boolean) {
+    if (autoBusy) return
+    setAutoBusy(true)
+    setAutoError('')
+    try {
+      const value = await setAutostart(enabled)
+      setSystem(value.autostart)
+    } catch (reason) {
+      setAutoError(reason instanceof Error ? reason.message : 'Не удалось изменить автозапуск')
+    } finally {
+      setAutoBusy(false)
+    }
+  }
+
+  async function refreshAll() {
+    if (refreshBusy) return
+    setRefreshBusy(true)
+    setRefreshNote('')
+    try {
+      const result = await session.refreshAll()
+      if (!result.updated && !result.failed) setRefreshNote('Нет подписок для обновления')
+      else if (!result.updated) setRefreshNote('Не удалось обновить подписки')
+      else if (result.failed) setRefreshNote(`Обновлено: ${result.updated} · не удалось: ${result.failed}`)
+      else setRefreshNote(`Обновлено подписок: ${result.updated}`)
+    } catch (reason) {
+      setRefreshNote(reason instanceof Error ? reason.message : 'Не удалось обновить подписки')
+    } finally {
+      setRefreshBusy(false)
+    }
+  }
+
   return (
     <div className="modal" onMouseDown={onClose}>
       <form
-        className="panel"
+        className="panel settings"
         onMouseDown={(event) => event.stopPropagation()}
         onSubmit={(event) => {
           event.preventDefault()
@@ -446,33 +518,180 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
         }}
       >
         <h2>Параметры</h2>
-        <div className="grid-2">
-          <label className="field">
-            <span>SOCKS5</span>
-            <input
-              value={settings.socksPort}
-              disabled={locked}
-              inputMode="numeric"
-              onChange={(event) => session.patchSettings({ socksPort: Number(event.target.value) })}
-            />
-          </label>
-          <label className="field">
-            <span>HTTP</span>
-            <input
-              value={settings.httpPort}
-              disabled={locked}
-              inputMode="numeric"
-              onChange={(event) => session.patchSettings({ httpPort: Number(event.target.value) })}
-            />
-          </label>
+        <div className="settings-scroll">
+          <section className="settings-block">
+            <h3>Подключение</h3>
+            <div className="grid-2">
+              <label className="field">
+                <span>SOCKS5</span>
+                <input
+                  value={settings.socksPort}
+                  disabled={locked}
+                  inputMode="numeric"
+                  onChange={(event) => session.patchSettings({ socksPort: Number(event.target.value) })}
+                />
+              </label>
+              <label className="field">
+                <span>HTTP</span>
+                <input
+                  value={settings.httpPort}
+                  disabled={locked}
+                  inputMode="numeric"
+                  onChange={(event) => session.patchSettings({ httpPort: Number(event.target.value) })}
+                />
+              </label>
+            </div>
+            <div className="grid-2">
+              <label className="field">
+                <span>Имя TUN</span>
+                <input
+                  value={settings.tunName}
+                  disabled={locked}
+                  maxLength={32}
+                  onChange={(event) => session.patchSettings({ tunName: event.target.value })}
+                />
+              </label>
+              <label className="field">
+                <span>MTU</span>
+                <input
+                  value={settings.mtu}
+                  disabled={locked}
+                  inputMode="numeric"
+                  onChange={(event) => session.patchSettings({ mtu: Number(event.target.value) })}
+                />
+              </label>
+            </div>
+            <label className="field">
+              <span>DNS</span>
+              <input
+                value={settings.dns}
+                disabled={locked}
+                placeholder="1.1.1.1"
+                onChange={(event) => session.patchSettings({ dns: event.target.value })}
+              />
+            </label>
+            <p className="fine">
+              Кнопка включает Astral для Windows и возвращает прежний прокси, когда вы её выключаете.
+            </p>
+            {phase === 'connected' && snapshot.socks && (
+              <p className="fine">
+                {snapshot.socks}
+                {snapshot.http ? ` · ${snapshot.http}` : ''}
+              </p>
+            )}
+          </section>
+
+          <section className="settings-block">
+            <h3>Маршрутизация</h3>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={settings.configRouting}
+                disabled={locked}
+                onChange={(event) => session.patchSettings({ configRouting: event.target.checked })}
+              />
+              <span>
+                <b>Правила из подписки</b>
+                <small>Обход, блокировки и отдельные маршруты из конфига сервера.</small>
+              </span>
+            </label>
+            {settings.configRouting && routingRules > 0 && (
+              <p className="fine offset">В конфиге выбранного сервера {routingRules} правил.</p>
+            )}
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={settings.blockAds}
+                disabled={locked}
+                onChange={(event) => session.patchSettings({ blockAds: event.target.checked })}
+              />
+              <span>
+                <b>Блокировать рекламу и трекеры</b>
+                <small>Список geosite:category-ads-all, работает и без правил подписки.</small>
+              </span>
+            </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={settings.bypassLocal}
+                disabled={locked}
+                onChange={(event) => session.patchSettings({ bypassLocal: event.target.checked })}
+              />
+              <span>
+                <b>Локальная сеть напрямую</b>
+                <small>Принтеры, роутер и другие устройства в домашней сети не идут в туннель.</small>
+              </span>
+            </label>
+            {locked && (
+              <p className="fine offset">Изменения маршрутизации применятся после переподключения.</p>
+            )}
+          </section>
+
+          <section className="settings-block">
+            <h3>Подписки</h3>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={settings.autoRefresh}
+                disabled={busy}
+                onChange={(event) => session.patchSettings({ autoRefresh: event.target.checked })}
+              />
+              <span>
+                <b>Обновлять автоматически</b>
+                <small>
+                  Подписок: {subscriptions.length} · обновлено {updatedLabel}
+                </small>
+              </span>
+            </label>
+            <div className="inline-row">
+              <label className="field grow">
+                <span>Период</span>
+                <select
+                  value={settings.refreshMinutes}
+                  disabled={busy || !settings.autoRefresh}
+                  onChange={(event) => session.patchSettings({ refreshMinutes: Number(event.target.value) })}
+                >
+                  <option value="30">каждые 30 минут</option>
+                  <option value="60">каждый час</option>
+                  <option value="180">каждые 3 часа</option>
+                  <option value="360">каждые 6 часов</option>
+                  <option value="720">каждые 12 часов</option>
+                  <option value="1440">раз в сутки</option>
+                </select>
+              </label>
+              <button
+                type="button"
+                className="ghost"
+                disabled={refreshBusy || !subscriptions.length || busy}
+                onClick={() => void refreshAll()}
+              >
+                {refreshBusy ? 'Обновляю…' : 'Обновить все'}
+              </button>
+            </div>
+            {refreshNote && <p className="fine">{refreshNote}</p>}
+          </section>
+
+          <section className="settings-block">
+            <h3>Система</h3>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={system?.enabled === true}
+                disabled={autoBusy || !system?.available}
+                onChange={(event) => void toggleAutostart(event.target.checked)}
+              />
+              <span>
+                <b>Запускать при входе в Windows</b>
+                <small>
+                  {system?.available
+                    ? 'Astral появится сразу после входа в систему.'
+                    : 'Доступно в установленной версии Astral.'}
+                </small>
+              </span>
+            </label>
+            {autoError && <p className="form-error">{autoError}</p>}
+          </section>
         </div>
-        <p>Кнопка включает Astral для Windows и возвращает прежний прокси, когда вы её выключаете.</p>
-        {phase === 'connected' && snapshot.socks && (
-          <p className="fine">
-            {snapshot.socks}
-            {snapshot.http ? ` · ${snapshot.http}` : ''}
-          </p>
-        )}
         <div className="form-actions">
           <button type="submit" className="solid">
             Готово

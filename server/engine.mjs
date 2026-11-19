@@ -1,6 +1,6 @@
 import path from 'node:path'
 import { mkdir } from 'node:fs/promises'
-import { probeEgress, probeTcp, startProxy } from './proxy.mjs'
+import { probeEgress, probeTcp, probeViaProxy, startProxy } from './proxy.mjs'
 import { enableSystemProxy, restoreSystemProxy } from './system-proxy.mjs'
 import { reapTun } from './tun.mjs'
 import { reapXray, startCore, stopCore } from './xray.mjs'
@@ -121,13 +121,23 @@ function normalize(body) {
   if (mode === 'tun' && upstream.type === 'direct' && !xray) {
     throw new Error('Для TUN нужен сервер vless, SOCKS5 или HTTP.')
   }
-  return { mode, upstream, proxy, tun }
+  const rawRouting = body?.routing
+  const routing =
+    rawRouting && typeof rawRouting === 'object'
+      ? {
+          config: rawRouting.config !== false,
+          blockAds: rawRouting.blockAds === true,
+          bypassLocal: rawRouting.bypassLocal !== false,
+        }
+      : { config: rawRouting !== false, blockAds: false, bypassLocal: true }
+  return { mode, upstream, proxy, tun, routing }
 }
 
 export class Engine {
-  constructor(root) {
-    this.root = root
-    this.runtime = path.join(root, 'runtime')
+  constructor(options = {}) {
+    this.root = options.root || process.cwd()
+    this.bin = options.bin || path.join(this.root, 'bin')
+    this.runtime = options.runtime || path.join(this.root, 'runtime')
     this.phase = 'idle'
     this.mode = 'proxy'
     this.message = ''
@@ -141,7 +151,12 @@ export class Engine {
     this.proxy = null
     this.core = null
     this.cancel = false
+    this.stopping = null
     this.tail = Promise.resolve()
+  }
+
+  dirs() {
+    return { root: this.root, bin: this.bin, runtime: this.runtime }
   }
 
   enqueue(task) {
@@ -191,24 +206,25 @@ export class Engine {
   }
 
   async stopAll() {
-    try {
-      await restoreSystemProxy(this.runtime)
-    } catch (error) {
-      console.error(error?.message || error)
-    }
-    this.systemProxy = false
     const proxy = this.proxy
     this.proxy = null
-    if (proxy) await proxy.close()
     const core = this.core
     this.core = null
-    if (core) await stopCore(core, this.runtime)
+    this.systemProxy = false
     this.socks = null
     this.http = null
     this.tunName = null
+    await Promise.allSettled([
+      restoreSystemProxy(this.runtime).catch((error) => {
+        console.error(error?.message || error)
+      }),
+      proxy ? proxy.close() : Promise.resolve(),
+      core ? stopCore(core, this.runtime) : Promise.resolve(),
+    ])
   }
 
   async connect(body) {
+    if (this.stopping) await this.stopping
     if (this.cancel) return this.finishIdle()
     this.phase = 'connecting'
     this.message = ''
@@ -245,15 +261,18 @@ export class Engine {
   }
 
   async disconnect() {
-    await this.stopAll()
-    return this.finishIdle()
+    const snapshot = this.finishIdle()
+    this.stopping = this.stopAll().finally(() => {
+      this.stopping = null
+    })
+    return snapshot
   }
 
   async startProxyMode(cfg) {
     const usesCore = cfg.upstream.xray || cfg.upstream.core || cfg.upstream.type === 'vless' || cfg.upstream.type === 'hysteria2'
     const system = Boolean(cfg.proxy.systemProxy)
     if (usesCore) {
-      const handle = await startCore(cfg, this.root, (message) => {
+      const handle = await startCore(cfg, this.dirs(), (message) => {
         if (this.phase !== 'connected' || !this.core) return
         this.phase = 'error'
         this.message = message || 'Прокси остановился'
@@ -281,7 +300,7 @@ export class Engine {
   }
 
   async startTunMode(cfg) {
-    this.core = await startCore(cfg, this.root, (message) => {
+    this.core = await startCore(cfg, this.dirs(), (message) => {
       if (this.phase !== 'connected' || !this.core) return
       this.phase = 'error'
       this.message = message || 'Туннель остановился'
@@ -303,6 +322,14 @@ export class Engine {
     const clean = String(host || '').trim()
     const number = Number(port)
     if (!clean || !Number.isInteger(number)) return Promise.resolve(-1)
+    const local = this.proxyPort()
+    if (local) return probeViaProxy(local, clean, number)
     return probeTcp(clean, number)
+  }
+
+  proxyPort() {
+    if (this.phase !== 'connected' || !this.http) return null
+    const value = Number(String(this.http).split(':').pop())
+    return Number.isInteger(value) && value > 0 ? value : null
   }
 }

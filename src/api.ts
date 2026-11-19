@@ -1,4 +1,4 @@
-import type { ConnectBody, ImportResult, SessionSnapshot } from './types'
+import type { ConnectBody, ImportResult, SessionSnapshot, SystemInfo } from './types'
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response
@@ -37,6 +37,17 @@ export function importLinks(source: string) {
   return request<ImportResult>('/api/import', {
     method: 'POST',
     body: JSON.stringify({ source }),
+  })
+}
+
+export function getSystem() {
+  return request<SystemInfo>('/api/system')
+}
+
+export function setAutostart(enabled: boolean) {
+  return request<SystemInfo>('/api/system', {
+    method: 'POST',
+    body: JSON.stringify({ autostart: enabled }),
   })
 }
 

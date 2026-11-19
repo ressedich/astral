@@ -58,6 +58,11 @@ export type Settings = {
   mtu: number
   dns: string
   allowRoutes: boolean
+  configRouting: boolean
+  blockAds: boolean
+  bypassLocal: boolean
+  autoRefresh: boolean
+  refreshMinutes: number
 }
 
 export type SessionSnapshot = {
@@ -96,6 +101,18 @@ export type ConnectBody = {
     mtu: number
     dns: string
     allowRoutes: boolean
+  }
+  routing: {
+    config: boolean
+    blockAds: boolean
+    bypassLocal: boolean
+  }
+}
+
+export type SystemInfo = {
+  autostart: {
+    available: boolean
+    enabled: boolean
   }
 }
 
