@@ -2,8 +2,6 @@
 
 Клиент для Windows 10 и 11 (64-bit). Установщик, ярлыки и обновления с GitHub Releases.
 
-Страница установки: [ressedich.github.io/astral](https://ressedich.github.io/astral)
-
 ## Установка
 
 1. Откройте [последний релиз](https://github.com/ressedich/astral/releases/latest) и скачайте `Astral-Setup-<версия>.exe`.
