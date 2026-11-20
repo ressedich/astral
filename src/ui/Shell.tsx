@@ -59,9 +59,6 @@ export function Shell() {
             <IconButton title="Пинг" disabled={ping.busy || !settings.servers.length} onClick={() => void ping.run()}>
               <PulseIcon />
             </IconButton>
-            <IconButton title="Параметры" disabled={locked} onClick={() => setSheet(true)}>
-              <SlidersIcon />
-            </IconButton>
             <IconButton title="Добавить" onClick={() => setAddOpen(true)}>
               <PlusIcon />
             </IconButton>
@@ -186,6 +183,18 @@ export function Shell() {
             </p>
           )}
         </div>
+        {!sheet && (
+          <button
+            type="button"
+            className="settings-tab"
+            aria-label="Настройки"
+            aria-haspopup="dialog"
+            onClick={() => setSheet(true)}
+          >
+            <SlidersIcon />
+            <span>Настройки</span>
+          </button>
+        )}
         {addOpen && <AddDialog onClose={() => setAddOpen(false)} />}
         {sheet && <SettingsDialog onClose={() => setSheet(false)} />}
       </main>
@@ -353,6 +362,52 @@ function SlidersIcon() {
   )
 }
 
+function CloseIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3.5 3.5l9 9M12.5 3.5l-9 9" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function PlugIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M5.5 2v3.2M10.5 2v3.2" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <path d="M3.6 5.2h8.8v1.6a4.4 4.4 0 0 1-8.8 0Z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+      <path d="M8 11.3V14" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function RouteIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="3.5" cy="4" r="1.4" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      <circle cx="12.5" cy="12" r="1.4" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M4.9 4H9a3 3 0 0 1 3 3v3.6" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
+function RefreshIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M13.2 8A5.2 5.2 0 1 1 11.5 4" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+      <path d="M13.4 2.4v3.3h-3.3" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+
+function MonitorIcon() {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="2.2" y="3" width="11.6" height="7.6" rx="1.4" fill="none" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M6 13.4h4M8 10.6v2.8" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" />
+    </svg>
+  )
+}
+
 function IconButton({
   title,
   disabled,
@@ -434,17 +489,13 @@ function AddDialog({ onClose }: { onClose: () => void }) {
 
 function SettingsDialog({ onClose }: { onClose: () => void }) {
   const session = useSession()
-  const { settings, server, locked, snapshot, phase, stopping } = session
+  const { settings, locked, snapshot, phase, stopping } = session
   const busy = phase === 'connecting' || stopping
   const [system, setSystem] = useState<{ available: boolean; enabled: boolean } | null>(null)
   const [autoBusy, setAutoBusy] = useState(false)
   const [autoError, setAutoError] = useState('')
   const [refreshBusy, setRefreshBusy] = useState(false)
   const [refreshNote, setRefreshNote] = useState('')
-  const routingRules = (() => {
-    const routing = (server.xray as { routing?: { rules?: unknown } } | null)?.routing
-    return Array.isArray(routing?.rules) ? routing.rules.length : 0
-  })()
   const subscriptions = settings.subscriptions.filter((item) => item.url)
   const lastUpdated = subscriptions.reduce<number | null>(
     (latest, item) => (item.updatedAt && (!latest || item.updatedAt > latest) ? item.updatedAt : latest),
@@ -508,19 +559,34 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="modal" onMouseDown={onClose}>
+    <div className="sheet-layer" onMouseDown={onClose}>
       <form
-        className="panel settings"
+        className="settings-sheet"
         onMouseDown={(event) => event.stopPropagation()}
         onSubmit={(event) => {
           event.preventDefault()
           onClose()
         }}
       >
-        <h2>Параметры</h2>
+        <div className="sheet-grip" aria-hidden="true" />
+        <header className="settings-head">
+          <div>
+            <h2>Настройки</h2>
+            <p>Подключение, маршрутизация и подписки</p>
+          </div>
+          <button type="button" className="settings-close" onClick={onClose} aria-label="Закрыть">
+            <CloseIcon />
+          </button>
+        </header>
         <div className="settings-scroll">
           <section className="settings-block">
-            <h3>Подключение</h3>
+            <div className="block-head">
+              <span className="block-icon"><PlugIcon /></span>
+              <div>
+                <h3>Подключение</h3>
+                <p>Порты локального прокси и параметры туннеля</p>
+              </div>
+            </div>
             <div className="grid-2">
               <label className="field">
                 <span>SOCKS5</span>
@@ -570,9 +636,6 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
                 onChange={(event) => session.patchSettings({ dns: event.target.value })}
               />
             </label>
-            <p className="fine">
-              Кнопка включает Astral для Windows и возвращает прежний прокси, когда вы её выключаете.
-            </p>
             {phase === 'connected' && snapshot.socks && (
               <p className="fine">
                 {snapshot.socks}
@@ -582,22 +645,13 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
           </section>
 
           <section className="settings-block">
-            <h3>Маршрутизация</h3>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={settings.configRouting}
-                disabled={locked}
-                onChange={(event) => session.patchSettings({ configRouting: event.target.checked })}
-              />
-              <span>
-                <b>Правила из подписки</b>
-                <small>Обход, блокировки и отдельные маршруты из конфига сервера.</small>
-              </span>
-            </label>
-            {settings.configRouting && routingRules > 0 && (
-              <p className="fine offset">В конфиге выбранного сервера {routingRules} правил.</p>
-            )}
+            <div className="block-head">
+              <span className="block-icon"><RouteIcon /></span>
+              <div>
+                <h3>Маршрутизация</h3>
+                <p>Правила из подписки применяются автоматически</p>
+              </div>
+            </div>
             <label className="check">
               <input
                 type="checkbox"
@@ -628,7 +682,13 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
           </section>
 
           <section className="settings-block">
-            <h3>Подписки</h3>
+            <div className="block-head">
+              <span className="block-icon"><RefreshIcon /></span>
+              <div>
+                <h3>Подписки</h3>
+                <p>Автоматическое обновление списка серверов</p>
+              </div>
+            </div>
             <label className="check">
               <input
                 type="checkbox"
@@ -672,7 +732,13 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
           </section>
 
           <section className="settings-block">
-            <h3>Система</h3>
+            <div className="block-head">
+              <span className="block-icon"><MonitorIcon /></span>
+              <div>
+                <h3>Система</h3>
+                <p>Поведение Astral в Windows</p>
+              </div>
+            </div>
             <label className="check">
               <input
                 type="checkbox"

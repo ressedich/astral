@@ -58,7 +58,6 @@ export type Settings = {
   mtu: number
   dns: string
   allowRoutes: boolean
-  configRouting: boolean
   blockAds: boolean
   bypassLocal: boolean
   autoRefresh: boolean

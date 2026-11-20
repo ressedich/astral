@@ -15,7 +15,6 @@ export function defaultSettings(): Settings {
     mtu: 1400,
     dns: '1.1.1.1',
     allowRoutes: false,
-    configRouting: true,
     blockAds: false,
     bypassLocal: true,
     autoRefresh: true,

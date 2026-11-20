@@ -8,10 +8,12 @@ function New-AstralBitmap([int]$size) {
   $bmp = New-Object System.Drawing.Bitmap($size, $size, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
   $g = [System.Drawing.Graphics]::FromImage($bmp)
   $g.SmoothingMode = [System.Drawing.Drawing2D.SmoothingMode]::AntiAlias
+  $g.PixelOffsetMode = [System.Drawing.Drawing2D.PixelOffsetMode]::HighQuality
   $g.Clear([System.Drawing.Color]::Transparent)
 
-  $pad = [Math]::Max(1.0, $size * 0.02)
-  $radius = $size * 0.24
+  # Tile
+  $pad = [Math]::Max(0.5, $size * 0.015)
+  $radius = $size * 0.23
   $rect = New-Object System.Drawing.RectangleF($pad, $pad, ($size - 2 * $pad), ($size - 2 * $pad))
   $path = New-Object System.Drawing.Drawing2D.GraphicsPath
   $d = $radius * 2
@@ -20,28 +22,48 @@ function New-AstralBitmap([int]$size) {
   $path.AddArc(($rect.Right - $d), ($rect.Bottom - $d), $d, $d, 0, 90)
   $path.AddArc($rect.X, ($rect.Bottom - $d), $d, $d, 90, 90)
   $path.CloseFigure()
-  $bg = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 2, 2, 4))
+
+  $bg = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::FromArgb(255, 6, 6, 8))
   $g.FillPath($bg, $path)
 
-  $white = [System.Drawing.Color]::FromArgb(255, 255, 255, 255)
-  $ringWidth = [Math]::Max(1.0, $size * 0.042)
-  $pen = New-Object System.Drawing.Pen($white, $ringWidth)
-  $r = $size * 0.27
+  $edge = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(30, 255, 255, 255), [Math]::Max(1.0, $size * 0.005))
+  $g.DrawPath($edge, $path)
+  $edge.Dispose()
+
   $cx = $size / 2.0
   $cy = $size / 2.0
-  $g.DrawEllipse($pen, ($cx - $r), ($cy - $r), (2 * $r), (2 * $r))
 
-  $dot = New-Object System.Drawing.SolidBrush($white)
-  $dr = $size * 0.062
-  $g.FillEllipse($dot, ($cx - $dr), ($cy - $dr), (2 * $dr), (2 * $dr))
+  # Orbit behind the mark
+  if ($size -ge 40) {
+    $state = $g.Save()
+    $g.TranslateTransform($cx, $cy)
+    $g.RotateTransform(-22)
+    $ow = $size * 0.64
+    $oh = $size * 0.22
+    $orbit = New-Object System.Drawing.Pen([System.Drawing.Color]::FromArgb(78, 255, 255, 255), [Math]::Max(1.0, $size * 0.011))
+    $g.DrawEllipse($orbit, (-$ow / 2), (-$oh / 2), $ow, $oh)
+    $orbit.Dispose()
+    $g.Restore($state)
+  }
 
-  $spark = [Math]::Max(1.0, $size * 0.022)
-  $g.FillEllipse($dot, ($size * 0.20), ($size * 0.20), (2 * $spark), (2 * $spark))
-  $g.FillEllipse($dot, ($size * 0.76), ($size * 0.24), (2 * $spark * 0.7), (2 * $spark * 0.7))
-  $g.FillEllipse($dot, ($size * 0.24), ($size * 0.74), (2 * $spark * 0.7), (2 * $spark * 0.7))
+  # Monogram "A"
+  $white = [System.Drawing.Color]::FromArgb(255, 255, 255, 255)
+  $stroke = $size * 0.105
+  $pen = New-Object System.Drawing.Pen($white, $stroke)
+  $pen.StartCap = [System.Drawing.Drawing2D.LineCap]::Round
+  $pen.EndCap = [System.Drawing.Drawing2D.LineCap]::Round
+  $pen.LineJoin = [System.Drawing.Drawing2D.LineJoin]::Round
+
+  $apex = New-Object System.Drawing.PointF(($size * 0.5), ($size * 0.235))
+  $left = New-Object System.Drawing.PointF(($size * 0.285), ($size * 0.775))
+  $right = New-Object System.Drawing.PointF(($size * 0.715), ($size * 0.775))
+  $g.DrawLine($pen, $apex, $left)
+  $g.DrawLine($pen, $apex, $right)
+
+  $barY = $size * 0.585
+  $g.DrawLine($pen, (New-Object System.Drawing.PointF(($size * 0.386), $barY)), (New-Object System.Drawing.PointF(($size * 0.614), $barY)))
 
   $pen.Dispose()
-  $dot.Dispose()
   $bg.Dispose()
   $path.Dispose()
   $g.Dispose()
@@ -87,8 +109,6 @@ foreach ($image in $images) {
 foreach ($image in $images) {
   $writer.Write([Byte[]]$image[1])
 }
-$writer.Flush()
 $writer.Close()
 $file.Close()
-
-Write-Host "icon.png и icon.ico готовы: $out"
+Write-Output "icon.png / icon.ico updated in $out"

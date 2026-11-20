@@ -193,7 +193,6 @@ function loadSettings(): Settings {
       mtu: Number(parsed.mtu) || base.mtu,
       dns: String(parsed.dns || base.dns),
       allowRoutes: Boolean(parsed.allowRoutes),
-      configRouting: parsed.configRouting !== false,
       blockAds: Boolean(parsed.blockAds),
       bypassLocal: parsed.bypassLocal !== false,
       autoRefresh: parsed.autoRefresh !== false,
@@ -339,7 +338,7 @@ function payload(settings: Settings, server: ServerProfile, mode: Mode): Connect
       allowRoutes: settings.allowRoutes,
     },
     routing: {
-      config: settings.configRouting !== false,
+      config: true,
       blockAds: settings.blockAds === true,
       bypassLocal: settings.bypassLocal !== false,
     },
