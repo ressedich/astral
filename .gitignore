@@ -1,8 +1,5 @@
-node_modules
-dist
-bin
-runtime
-ios/build
-release
-*.log
-.DS_Store
+*
+!.gitignore
+!README.md
+!docs/
+!docs/**
