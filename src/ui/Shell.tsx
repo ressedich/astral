@@ -5,6 +5,7 @@ import { countryOf, labelOf } from '../flags'
 import { formatBytes, formatDuration } from '../format'
 import { useSession } from '../session'
 import { Sky } from '../scene/Sky'
+import type { AppUpdateState } from '../vite-env'
 import type { ServerProfile, Subscription } from '../types'
 
 export function Shell() {
@@ -494,6 +495,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
   const [system, setSystem] = useState<{ available: boolean; enabled: boolean } | null>(null)
   const [autoBusy, setAutoBusy] = useState(false)
   const [autoError, setAutoError] = useState('')
+  const appUpdate = useAppUpdate()
   const [refreshBusy, setRefreshBusy] = useState(false)
   const [refreshNote, setRefreshNote] = useState('')
   const subscriptions = settings.subscriptions.filter((item) => item.url)
@@ -736,7 +738,7 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
               <span className="block-icon"><MonitorIcon /></span>
               <div>
                 <h3>Система</h3>
-                <p>Поведение Astral в Windows</p>
+                <p>Автозапуск и обновления Astral</p>
               </div>
             </div>
             <label className="check">
@@ -756,6 +758,31 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
               </span>
             </label>
             {autoError && <p className="form-error">{autoError}</p>}
+            <div className="update-row">
+              <div>
+                <b>{appUpdate.version ? `Версия ${appUpdate.version}` : 'Обновления'}</b>
+                <small>{appUpdate.message}</small>
+              </div>
+              <div className="update-actions">
+                {appUpdate.status === 'ready' ? (
+                  <button type="button" className="ghost" onClick={() => void appUpdate.install()}>
+                    Установить и перезапустить
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="ghost"
+                    disabled={!appUpdate.canCheck || appUpdate.busy}
+                    onClick={() => void appUpdate.check()}
+                  >
+                    {appUpdate.busy ? 'Проверяю…' : 'Проверить'}
+                  </button>
+                )}
+                <a className="ghost" href="https://github.com/ressedich/astral/releases/latest" target="_blank" rel="noreferrer">
+                  Релизы
+                </a>
+              </div>
+            </div>
           </section>
         </div>
         <div className="form-actions">
@@ -766,6 +793,45 @@ function SettingsDialog({ onClose }: { onClose: () => void }) {
       </form>
     </div>
   )
+}
+
+const updateFallback: AppUpdateState = {
+  version: '',
+  status: 'unavailable',
+  message: 'Доступно в установленной версии Astral.',
+  percent: null,
+  nextVersion: null,
+}
+
+function useAppUpdate() {
+  const [state, setState] = useState<AppUpdateState>(updateFallback)
+
+  useEffect(() => {
+    const api = window.astral
+    if (!api) return
+    void api.getUpdate().then(setState).catch(() => {})
+    const unsubscribe = api.onUpdate(setState)
+    return () => {
+      if (typeof unsubscribe === 'function') unsubscribe()
+    }
+  }, [])
+
+  const busy = state.status === 'checking' || state.status === 'downloading' || state.status === 'available'
+  return {
+    ...state,
+    busy,
+    canCheck: state.status !== 'unavailable' && Boolean(window.astral),
+    check: async () => {
+      const api = window.astral
+      if (!api) return
+      setState(await api.checkForUpdates())
+    },
+    install: async () => {
+      const api = window.astral
+      if (!api) return
+      setState(await api.installUpdate())
+    },
+  }
 }
 
 function useManualPings(servers: ServerProfile[]) {

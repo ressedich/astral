@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Astral — установка</title>
+    <meta
+      name="description"
+      content="Установка Astral для Windows, ярлыки на рабочем столе и в меню «Пуск», обновления с GitHub."
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #050505;
+        --ink: #f4f4f4;
+        --muted: rgba(255, 255, 255, 0.58);
+        --faint: rgba(255, 255, 255, 0.38);
+        --line: rgba(255, 255, 255, 0.1);
+        --card: #101011;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; background: var(--bg); color: var(--ink); }
+      body {
+        min-height: 100vh;
+        font-family: "Segoe UI", "Helvetica Neue", sans-serif;
+        font-size: 16px;
+        line-height: 1.5;
+      }
+      a { color: inherit; }
+      .wrap { width: min(880px, calc(100% - 40px)); margin: 0 auto; padding: 48px 0 72px; }
+      header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+      .mark { display: flex; align-items: center; gap: 10px; font-weight: 650; letter-spacing: 0.08em; text-transform: uppercase; font-size: 13px; }
+      .mark i {
+        width: 14px; height: 14px; border-radius: 50%;
+        border: 1.5px solid #fff;
+        box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.06);
+      }
+      header a.quiet { color: var(--muted); text-decoration: none; font-size: 14px; }
+      header a.quiet:hover { color: #fff; }
+      h1 {
+        margin: 72px 0 12px;
+        font-size: clamp(44px, 7vw, 76px);
+        line-height: 0.95;
+        font-weight: 560;
+        letter-spacing: -0.045em;
+      }
+      .lead { max-width: 560px; margin: 0; color: var(--muted); font-size: 18px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+      .button, .ghost {
+        display: inline-flex; align-items: center; justify-content: center;
+        height: 44px; padding: 0 16px; border-radius: 12px;
+        text-decoration: none; font-size: 14px; font-weight: 600;
+      }
+      .button { background: #fff; color: #111; }
+      .button:hover { background: #ececec; }
+      .ghost { border: 1px solid var(--line); color: var(--ink); }
+      .ghost:hover { border-color: rgba(255, 255, 255, 0.4); }
+      .note { margin: 12px 0 0; color: var(--faint); font-size: 13px; }
+      .grid { display: grid; grid-template-columns: 1.1fr 0.9fr; gap: 14px; margin-top: 56px; }
+      article {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 22px 22px 8px;
+      }
+      article.wide { grid-column: 1 / -1; }
+      h2 { margin: 0 0 8px; font-size: 18px; letter-spacing: -0.02em; }
+      ol, ul { margin: 0; padding: 0 0 12px 18px; }
+      li { margin: 0 0 10px; color: var(--muted); }
+      li b { color: var(--ink); font-weight: 600; }
+      .steps { list-style: none; padding: 0 0 14px; counter-reset: step; }
+      .steps li { counter-increment: step; display: grid; grid-template-columns: 28px 1fr; gap: 10px; }
+      .steps li::before {
+        content: counter(step);
+        width: 28px; height: 28px; border-radius: 8px;
+        display: grid; place-items: center;
+        border: 1px solid var(--line);
+        color: #fff; font-size: 13px;
+      }
+      code {
+        font-family: Consolas, "Cascadia Mono", monospace;
+        font-size: 0.92em;
+        color: #fff;
+      }
+      footer { margin-top: 28px; color: var(--faint); font-size: 13px; }
+      @media (max-width: 760px) {
+        .grid { grid-template-columns: 1fr; }
+        h1 { margin-top: 48px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <header>
+        <div class="mark"><i></i> Astral</div>
+        <a class="quiet" href="https://github.com/ressedich/astral">GitHub</a>
+      </header>
+      <h1>Установка<br />для Windows</h1>
+      <p class="lead">Один установщик. Ярлык на рабочий стол и в меню «Пуск» — по желанию. Новые версии приходят сами из GitHub Releases.</p>
+      <div class="actions">
+        <a class="button" href="https://github.com/ressedich/astral/releases/latest">Скачать Astral</a>
+        <a class="ghost" href="https://github.com/ressedich/astral/releases">Все версии</a>
+      </div>
+      <p class="note">Windows 10 и 11, 64-bit. Файл называется Astral-Setup.</p>
+
+      <div class="grid">
+        <article>
+          <h2>Как поставить</h2>
+          <ol class="steps">
+            <li><span>Скачайте последний <code>Astral-Setup</code> и запустите его. Права администратора для установки не нужны.</span></li>
+            <li><span>На шаге «Ярлыки» оставьте или снимите «Добавить Astral на рабочий стол» и «Добавить Astral в меню Пуск».</span></li>
+            <li><span>Запустите Astral. Приложение лежит в локальной папке программ текущего пользователя.</span></li>
+          </ol>
+        </article>
+        <article>
+          <h2>Обновления</h2>
+          <ul>
+            <li><span>Astral сама проверяет GitHub через несколько секунд после запуска.</span></li>
+            <li><span>Новая версия скачивается в фоне. Установка — кнопкой «Перезапустить» или в <b>Настройки → Система</b>.</span></li>
+            <li><span>Подписки и настройки сохраняются. Ярлыки, которые уже есть, обновление не пересоздаёт.</span></li>
+          </ul>
+        </article>
+        <article class="wide">
+          <h2>Как выложить обновление</h2>
+          <ol class="steps">
+            <li><span>Поднимите <code>version</code> в <code>package.json</code>.</span></li>
+            <li><span>Отправьте тег с тем же номером: <code>v1.0.3</code> для версии <code>1.0.3</code>.</span></li>
+            <li><span>GitHub Actions приложит установщик и <code>latest.yml</code> к релизу. Установленные копии заберут его сами.</span></li>
+          </ol>
+          <p class="note">Релиз должен открываться без входа в GitHub. Иначе приложение не сможет его скачать.</p>
+        </article>
+      </div>
+      <footer>Удаление — через «Установка и удаление программ». Данные остаются в %APPDATA%\Astral.</footer>
+    </div>
+  </body>
+</html>

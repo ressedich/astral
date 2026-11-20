@@ -4,6 +4,7 @@ const { createWriteStream, mkdirSync } = require('node:fs')
 const http = require('node:http')
 const net = require('node:net')
 const path = require('node:path')
+const { createUpdater } = require('./update.cjs')
 
 const isDev = !app.isPackaged
 const root = path.join(__dirname, '..')
@@ -14,6 +15,7 @@ let engine = null
 let engineLog = null
 let enginePort = 0
 let quitting = false
+let updates = null
 
 nativeTheme.themeSource = 'dark'
 app.setAppUserModelId(appId)
@@ -32,9 +34,20 @@ if (!app.requestSingleInstanceLock()) {
 
 async function start() {
   Menu.setApplicationMenu(null)
+  updates = createUpdater({
+    getWindow: () => win,
+    beforeInstall: async () => {
+      quitting = true
+      await stopEngine()
+    },
+    log: (line) => {
+      if (engineLog) engineLog.write(`[update] ${line}\n`)
+    },
+  })
   enginePort = isDev ? 47321 : await freePort()
   if (!isDev) await startEngine()
   createWindow()
+  updates.schedule()
 }
 
 function dedicatedRuntime() {
@@ -145,6 +158,7 @@ function createWindow() {
       height: 36,
     },
     webPreferences: {
+      preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

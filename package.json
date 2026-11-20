@@ -2,7 +2,7 @@
   "name": "astral",
   "productName": "Astral",
   "private": true,
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Astral — десктопный клиент для защищённого соединения",
   "author": "Astral",
   "type": "module",
@@ -17,18 +17,19 @@
     "dist": "vite build && electron-builder --win nsis --x64"
   },
   "dependencies": {
-    "@react-three/fiber": "^9.8.2",
-    "react": "^19.3.1",
-    "react-dom": "^19.3.1",
-    "three": "^0.187.0"
+    "electron-updater": "^6.8.9"
   },
   "devDependencies": {
+    "@react-three/fiber": "^9.8.2",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@types/three": "^0.187.0",
     "@vitejs/plugin-react": "^6.3.0",
     "electron": "^45.3.2",
     "electron-builder": "^26.18.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "three": "^0.187.0",
     "typescript": "^7.0.2",
     "vite": "^8.3.8"
   },
@@ -44,7 +45,6 @@
     "files": [
       "electron/**/*",
       "package.json",
-      "!node_modules/**/*",
       "!dist/**/*",
       "!server/**/*",
       "!bin/**/*",
@@ -108,8 +108,8 @@
       "perMachine": false,
       "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": "always",
-      "createStartMenuShortcut": true,
+      "createDesktopShortcut": false,
+      "createStartMenuShortcut": false,
       "shortcutName": "Astral",
       "uninstallDisplayName": "Astral ${version}",
       "runAfterFinish": true,

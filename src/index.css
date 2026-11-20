@@ -794,6 +794,42 @@ button:disabled { cursor: default; }
 .settings-block .fine:last-child { margin-bottom: 2px; }
 
 .inline-row { display: flex; align-items: flex-end; gap: 10px; }
+.update-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+.update-row b {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+}
+.update-row small {
+  display: block;
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.update-actions { display: flex; flex: none; gap: 8px; }
+.update-actions .ghost {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  white-space: nowrap;
+  transition: border-color 160ms ease, color 160ms ease;
+}
+.update-actions a.ghost {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}
+.update-actions .ghost:hover:not(:disabled) { border-color: rgba(255, 255, 255, 0.4); color: #fff; }
+.update-actions .ghost:disabled { opacity: 0.35; }
 .inline-row .field { margin-bottom: 0; }
 .inline-row .ghost {
   flex: none;
